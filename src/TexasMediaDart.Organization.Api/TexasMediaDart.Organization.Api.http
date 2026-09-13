@@ -1,0 +1,59 @@
+@IdentityApi = http://localhost:5248
+@OrganizationApi = http://localhost:5110
+
+@timestamp = {{$timestamp}}
+@email = e2e_{{timestamp}}@texasmediadart.com
+@password = Test@12345
+@organizationName = TexasMediaDart E2E {{timestamp}}
+
+
+### 1. Register new Identity user
+
+POST {{IdentityApi}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}",
+  "confirmPassword": "{{password}}"
+}
+
+
+### 2. Login
+
+# @name login
+POST {{IdentityApi}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "e2e_1789286405@texasmediadart.com",
+  "password": "Test@12345"
+}
+
+
+### 3. Verify user has no organization yet
+# Expected: 404
+
+GET {{OrganizationApi}}/api/organizations/current
+Authorization: Bearer {{login.response.body.accessToken}}
+Accept: application/json
+
+
+### 4. Create organization
+
+# @name createOrganization
+POST {{OrganizationApi}}/api/organizations
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "TexasMediaDart E2E 1789286286"
+}
+
+
+### 5. Verify current organization
+# Expected: 200
+
+GET {{OrganizationApi}}/api/organizations/current
+Authorization: Bearer {{login.response.body.accessToken}}
+Accept: application/json

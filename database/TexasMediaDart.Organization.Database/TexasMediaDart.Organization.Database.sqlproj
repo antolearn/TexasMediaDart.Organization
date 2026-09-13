@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build">
+  <Sdk Name="Microsoft.Build.Sql" Version="2.2.0" />
+  <PropertyGroup>
+    <Name>TexasMediaDart.Organization.Database</Name>
+    <DSP>Microsoft.Data.Tools.Schema.Sql.Sql170DatabaseSchemaProvider</DSP>
+    <ModelCollation>1033, CI</ModelCollation>
+    <ProjectGuid>132BDDBE-042E-404F-9FEB-7195F6D3A835</ProjectGuid>
+  </PropertyGroup>
+   <ItemGroup>
+    <Build Remove="Seed\**\*.sql" />
+    <Build Remove="Scripts\PostDeployment.sql" />
+
+    <PostDeploy Include="Scripts\PostDeployment.sql" />
+  </ItemGroup>
+
+</Project>

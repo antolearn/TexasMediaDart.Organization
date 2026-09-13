@@ -1,0 +1,27 @@
+# Local secrets
+set-user-secrets.ps1
+appsettings.Local.json
+appsettings.Development.local.json
+
+# .NET build output
+**/bin/
+**/obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# VS Code
+.vscode/
+
+# SQL build output
+*.dacpac
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# helper scripts
+src/Test/generateJWTKey.ps1
+/set-user-secrets.ps1

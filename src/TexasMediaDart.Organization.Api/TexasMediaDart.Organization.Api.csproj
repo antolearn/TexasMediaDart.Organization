@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>b4c6d4f1-1462-4479-b9dd-d4c68d75b6cd</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TexasMediaDart.Organization.Application\TexasMediaDart.Organization.Application.csproj" />
+    <ProjectReference Include="..\TexasMediaDart.Organization.Infrastructure\TexasMediaDart.Organization.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
