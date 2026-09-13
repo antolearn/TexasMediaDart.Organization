@@ -1,0 +1,49 @@
+name: Organization Deploy DEV
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '10.0.303'
+  API_PROJECT: 'src/TexasMediaDart.Organization.Api/TexasMediaDart.Organization.Api.csproj'
+  PUBLISH_PATH: 'publish'
+  AZURE_WEBAPP_NAME: 'texasmediadart-organization-dev'
+
+jobs:
+  deploy:
+    name: Deploy Organization API to DEV
+    runs-on: windows-latest
+    environment: dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore ${{ env.API_PROJECT }}
+
+      - name: Build
+        run: dotnet build ${{ env.API_PROJECT }} --configuration Release --no-restore
+
+      - name: Publish
+        run: >
+          dotnet publish ${{ env.API_PROJECT }}
+          --configuration Release
+          --no-build
+          --output ${{ env.PUBLISH_PATH }}
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ${{ env.PUBLISH_PATH }}
