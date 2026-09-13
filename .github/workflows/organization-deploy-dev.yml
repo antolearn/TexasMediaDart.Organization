@@ -47,3 +47,10 @@ jobs:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: ${{ env.PUBLISH_PATH }}
+
+      - name: Upload deployment artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: organization-api
+          path: ${{ env.PUBLISH_PATH }}
+          retention-days: 30     
