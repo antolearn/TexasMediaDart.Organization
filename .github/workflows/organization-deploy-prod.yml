@@ -1,0 +1,59 @@
+name: Organization Deploy PROD
+
+on:
+  workflow_dispatch:
+    inputs:
+      dev_run_id:
+        description: 'Successful Organization Deploy DEV workflow run ID to promote'
+        required: true
+        type: string
+
+env:
+  AZURE_WEBAPP_NAME: 'texasmediadart-organization-prod'
+  ARTIFACT_NAME: 'organization-api'
+  DOWNLOAD_PATH: 'promoted-package'
+
+jobs:
+  deploy:
+    name: Promote Organization API to PROD
+    runs-on: windows-latest
+    environment: prod
+
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download DEV deployment artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEV_RUN_ID: ${{ inputs.dev_run_id }}
+        shell: pwsh
+        run: |
+          gh run download $env:DEV_RUN_ID `
+            --repo "${{ github.repository }}" `
+            --name "${{ env.ARTIFACT_NAME }}" `
+            --dir "${{ env.DOWNLOAD_PATH }}"
+
+      - name: Verify promoted artifact
+        shell: pwsh
+        run: |
+          Write-Host "Promoting artifact from DEV workflow run:"
+          Write-Host "${{ inputs.dev_run_id }}"
+
+          if (-not (Test-Path "${{ env.DOWNLOAD_PATH }}")) {
+              throw "Deployment artifact was not downloaded."
+          }
+
+          Get-ChildItem "${{ env.DOWNLOAD_PATH }}" -Recurse |
+              Select-Object FullName, Length
+
+      - name: Deploy tested DEV artifact to PROD
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ${{ env.DOWNLOAD_PATH }}
