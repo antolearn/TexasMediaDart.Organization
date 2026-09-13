@@ -59,6 +59,47 @@ builder.Services
         };
     });
 
+    const string CorsPolicy = "FrontendCorsPolicy";
+
+var allowedOrigins =
+    builder.Configuration
+        .GetSection("Cors:AllowedOrigins")
+        .Get<string[]>()
+    ?? [];
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(CorsPolicy, policy =>
+    {
+        policy
+            .SetIsOriginAllowed(origin =>
+            {
+                if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                {
+                    return false;
+                }
+
+                // LOCAL development:
+                // Allow localhost / 127.0.0.1 on any port.
+                if (builder.Environment.IsDevelopment() &&
+                    uri.IsLoopback &&
+                    (uri.Scheme == Uri.UriSchemeHttp ||
+                     uri.Scheme == Uri.UriSchemeHttps))
+                {
+                    return true;
+                }
+
+                // DEV / PROD:
+                // Only allow explicitly configured frontend origins.
+                return allowedOrigins.Contains(
+                    origin,
+                    StringComparer.OrdinalIgnoreCase);
+            })
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
@@ -110,6 +151,7 @@ app.MapGet("/health/db", async (IConfiguration configuration) =>
 })
 .AllowAnonymous();
 app.UseExceptionHandler();
+app.UseCors(CorsPolicy);
 
 app.UseAuthentication();
 app.UseAuthorization();
