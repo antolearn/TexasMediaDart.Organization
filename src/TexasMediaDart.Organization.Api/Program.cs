@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using TexasMediaDart.Organization.Application.Organizations.Commands.CreateOrganization;
 using TexasMediaDart.Organization.Api.ExceptionHandling;
-using Microsoft.Data.SqlClient;
+using TexasMediaDart.Organization.Api.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -109,47 +109,7 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
-app.MapGet("/health/db", async (IConfiguration configuration) =>
-{
-    var connectionString =
-        configuration.GetConnectionString("DefaultConnection");
 
-    if (string.IsNullOrWhiteSpace(connectionString))
-    {
-        return Results.Problem(
-            title: "Database health check failed",
-            detail: "DefaultConnection is not configured.",
-            statusCode: StatusCodes.Status500InternalServerError);
-    }
-
-    try
-    {
-        await using var connection =
-            new SqlConnection(connectionString);
-
-        await connection.OpenAsync();
-
-        await using var command =
-            new SqlCommand("SELECT DB_NAME()", connection);
-
-        var databaseName =
-            Convert.ToString(await command.ExecuteScalarAsync());
-
-        return Results.Ok(new
-        {
-            status = "Healthy",
-            database = databaseName
-        });
-    }
-    catch (Exception)
-    {
-        return Results.Problem(
-            title: "Database health check failed",
-            detail: "The application could not connect to the database.",
-            statusCode: StatusCodes.Status500InternalServerError);
-    }
-})
-.AllowAnonymous();
 app.UseExceptionHandler();
 app.UseCors(CorsPolicy);
 
@@ -157,5 +117,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHealthEndpoints();
 
 app.Run();
