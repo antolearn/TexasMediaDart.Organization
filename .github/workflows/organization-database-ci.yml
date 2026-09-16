@@ -1,0 +1,52 @@
+name: Organization Database CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-validate:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore SQL Project
+        run: >
+          dotnet restore
+          database/TexasMediaDart.Organization.Database/TexasMediaDart.Organization.Database.sqlproj
+
+      - name: Build SQL Project for Azure SQL
+        run: >
+          dotnet build
+          database/TexasMediaDart.Organization.Database/TexasMediaDart.Organization.Database.sqlproj
+          --configuration Release
+          /p:DSP=Microsoft.Data.Tools.Schema.Sql.SqlAzureV12DatabaseSchemaProvider
+
+      - name: Verify DACPAC Exists
+        shell: pwsh
+        run: |
+          $dacpac =
+            "database/TexasMediaDart.Organization.Database/bin/Release/TexasMediaDart.Organization.Database.dacpac"
+
+          if (-not (Test-Path $dacpac)) {
+              Write-Error "Organization DACPAC was not generated."
+              exit 1
+          }
+
+          Write-Host "Organization DACPAC successfully generated:"
+          Write-Host $dacpac
+
+      - name: Upload DACPAC Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TexasMediaDart.Organization.Database
+          path: database/TexasMediaDart.Organization.Database/bin/Release/TexasMediaDart.Organization.Database.dacpac
+          retention-days: 7
