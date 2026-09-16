@@ -16,7 +16,7 @@ jobs:
   deploy-production:
     name: Deploy Organization Database to Production
     runs-on: windows-latest
-    environment: PRODUCTION
+    environment: prod
 
     steps:
       - name: Display Production Deployment Version
