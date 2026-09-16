@@ -1,0 +1,140 @@
+name: Organization API Deploy - Dev
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  DOTNET_VERSION: '10.0.303'
+  BUILD_CONFIGURATION: 'Release'
+  SOLUTION_FILE: 'TexasMediaDart.Organization.slnx'
+  API_PROJECT: 'src/TexasMediaDart.Organization.Api/TexasMediaDart.Organization.Api.csproj'
+  PUBLISH_PATH: '${{ github.workspace }}/publish'
+  AZURE_WEBAPP_NAME: 'texasmediadart-organization-dev'
+
+jobs:
+  build:
+    name: Build Release Organization API
+    runs-on: ubuntu-latest
+
+    outputs:
+      build_version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Generate build version
+        id: version
+        shell: bash
+        run: |
+          DATE=$(date +'%Y.%m.%d')
+          BUILD=$(printf "%04d" "$GITHUB_RUN_NUMBER")
+          VERSION="$DATE.$BUILD"
+
+          echo "BUILD_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "Organization API Release Version: $VERSION"
+
+          echo "### Organization API Release Version" >> "$GITHUB_STEP_SUMMARY"
+          echo "**$VERSION**" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.SOLUTION_FILE }}
+
+      - name: Build solution
+        run: >
+          dotnet build ${{ env.SOLUTION_FILE }}
+          --configuration ${{ env.BUILD_CONFIGURATION }}
+          --no-restore
+
+      - name: Publish Organization API
+        run: >
+          dotnet publish ${{ env.API_PROJECT }}
+          --configuration ${{ env.BUILD_CONFIGURATION }}
+          --no-restore
+          --output ${{ env.PUBLISH_PATH }}
+          /p:InformationalVersion=${{ env.BUILD_VERSION }}
+          /p:IncludeSourceRevisionInInformationalVersion=false
+
+      - name: Create versioned Organization API package
+        shell: bash
+        run: |
+          mkdir -p artifacts
+
+          cd "${{ env.PUBLISH_PATH }}"
+
+          zip -r \
+            "${{ github.workspace }}/artifacts/TexasMediaDart.Organization.Api-${BUILD_VERSION}.zip" \
+            .
+
+          echo "Created Organization API package:"
+          echo "TexasMediaDart.Organization.Api-${BUILD_VERSION}.zip"
+
+      - name: Upload versioned Organization API artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TexasMediaDart.Organization.Api-${{ env.BUILD_VERSION }}
+          path: artifacts/TexasMediaDart.Organization.Api-${{ env.BUILD_VERSION }}.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy-dev:
+    name: Deploy Organization API to Dev
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: dev
+
+    steps:
+      - name: Display Organization API Version
+        run: |
+          echo "Deploying Organization API Version:"
+          echo "${{ needs.build.outputs.build_version }}"
+
+      - name: Download versioned Organization API artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: TexasMediaDart.Organization.Api-${{ needs.build.outputs.build_version }}
+          path: artifacts
+
+      - name: Verify Organization API package
+        shell: bash
+        run: |
+          PACKAGE="artifacts/TexasMediaDart.Organization.Api-${{ needs.build.outputs.build_version }}.zip"
+
+          if [ ! -f "$PACKAGE" ]; then
+            echo "Organization API package was not found:"
+            echo "$PACKAGE"
+            exit 1
+          fi
+
+          echo "Organization API package:"
+          echo "$PACKAGE"
+
+      - name: Login to Azure using OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Organization API to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: artifacts/TexasMediaDart.Organization.Api-${{ needs.build.outputs.build_version }}.zip

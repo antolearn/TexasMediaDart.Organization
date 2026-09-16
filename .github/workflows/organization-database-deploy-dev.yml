@@ -1,0 +1,193 @@
+name: Build and Deploy Organization SQL Database - DEV
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Organization Release DACPAC
+    runs-on: windows-latest
+
+    outputs:
+      build_version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Generate build version
+        id: version
+        shell: pwsh
+        run: |
+          $date = Get-Date -Format "yyyy.MM.dd"
+          $build = "{0:D4}" -f [int]$env:GITHUB_RUN_NUMBER
+          $version = "$date.$build"
+
+          "BUILD_VERSION=$version" | Out-File `
+            -FilePath $env:GITHUB_ENV `
+            -Encoding utf8 `
+            -Append
+
+          "version=$version" | Out-File `
+            -FilePath $env:GITHUB_OUTPUT `
+            -Encoding utf8 `
+            -Append
+
+          Write-Host "Organization Database Release Version: $version"
+
+          "### Organization Database Release Version" >> $env:GITHUB_STEP_SUMMARY
+          "**$version**" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Restore SQL Project
+        run: >
+          dotnet restore
+          database/TexasMediaDart.Organization.Database/TexasMediaDart.Organization.Database.sqlproj
+
+      - name: Build SQL Project for Azure SQL
+        run: >
+          dotnet build
+          database/TexasMediaDart.Organization.Database/TexasMediaDart.Organization.Database.sqlproj
+          --configuration Release
+          --no-restore
+          /p:DSP=Microsoft.Data.Tools.Schema.Sql.SqlAzureV12DatabaseSchemaProvider
+
+      - name: Verify DACPAC
+        shell: pwsh
+        run: |
+          $dacpac =
+            "database/TexasMediaDart.Organization.Database/bin/Release/TexasMediaDart.Organization.Database.dacpac"
+
+          if (-not (Test-Path $dacpac)) {
+              Write-Error "Organization DACPAC was not generated."
+              exit 1
+          }
+
+          Write-Host "Organization DACPAC generated successfully:"
+          Write-Host $dacpac
+
+      - name: Create versioned DACPAC
+        shell: pwsh
+        run: |
+          $source =
+            "database/TexasMediaDart.Organization.Database/bin/Release/TexasMediaDart.Organization.Database.dacpac"
+
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "artifacts" | Out-Null
+
+          $destination =
+            "artifacts/TexasMediaDart.Organization.Database-$env:BUILD_VERSION.dacpac"
+
+          Copy-Item `
+            -Path $source `
+            -Destination $destination
+
+          Write-Host "Organization Release DACPAC:"
+          Write-Host $destination
+
+      - name: Upload Release DACPAC
+        uses: actions/upload-artifact@v4
+        with:
+          name: TexasMediaDart.Organization.Database-${{ env.BUILD_VERSION }}
+          path: artifacts/TexasMediaDart.Organization.Database-${{ env.BUILD_VERSION }}.dacpac
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy-dev:
+    name: Deploy Organization Database to DEV
+    needs: build
+    runs-on: windows-latest
+    environment: DEV
+
+    steps:
+      - name: Display Database Version
+        shell: pwsh
+        run: |
+          Write-Host "Deploying Organization Database Version:"
+          Write-Host "${{ needs.build.outputs.build_version }}"
+
+      - name: Download Release DACPAC
+        uses: actions/download-artifact@v4
+        with:
+          name: TexasMediaDart.Organization.Database-${{ needs.build.outputs.build_version }}
+          path: dacpac
+
+      - name: Deploy DACPAC to DEV
+        uses: azure/sql-action@v2.3
+        with:
+          connection-string: ${{ secrets.ORGANIZATION_DATABASE_DEV_CONNECTION_STRING }}
+          path: dacpac/TexasMediaDart.Organization.Database-${{ needs.build.outputs.build_version }}.dacpac
+          action: publish
+
+      - name: Record Database Version
+        shell: pwsh
+        env:
+          DB_CONNECTION_STRING: ${{ secrets.ORGANIZATION_DATABASE_DEV_CONNECTION_STRING }}
+          DATABASE_VERSION: ${{ needs.build.outputs.build_version }}
+        run: |
+          Write-Host "Recording Organization database version:"
+          Write-Host $env:DATABASE_VERSION
+
+          Add-Type -AssemblyName System.Data
+
+          $connection = New-Object System.Data.SqlClient.SqlConnection
+          $connection.ConnectionString = $env:DB_CONNECTION_STRING
+          $connection.Open()
+
+          $command = $connection.CreateCommand()
+          $command.CommandText = @"
+          IF EXISTS (
+              SELECT 1
+              FROM dbo.DatabaseVersion
+              WHERE Id = 1
+          )
+          BEGIN
+              UPDATE dbo.DatabaseVersion
+              SET
+                  Version = @Version,
+                  DeployedUtc = SYSUTCDATETIME()
+              WHERE Id = 1;
+          END
+          ELSE
+          BEGIN
+              INSERT INTO dbo.DatabaseVersion
+              (
+                  Id,
+                  Version,
+                  DeployedUtc
+              )
+              VALUES
+              (
+                  1,
+                  @Version,
+                  SYSUTCDATETIME()
+              );
+          END
+          "@
+
+          $parameter = $command.Parameters.Add(
+              "@Version",
+              [System.Data.SqlDbType]::NVarChar,
+              20
+          )
+
+          $parameter.Value = $env:DATABASE_VERSION
+
+          $command.ExecuteNonQuery() | Out-Null
+
+          $connection.Close()
+
+          Write-Host "Organization database version recorded successfully."

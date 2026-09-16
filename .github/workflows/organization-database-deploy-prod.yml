@@ -1,0 +1,170 @@
+name: Deploy Organization SQL Database - PROD
+
+on:
+  workflow_dispatch:
+    inputs:
+      database_version:
+        description: 'Approved Organization database version from DEV (example: 2026.09.15.0013)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  deploy-production:
+    name: Deploy Organization Database to Production
+    runs-on: windows-latest
+    environment: PRODUCTION
+
+    steps:
+      - name: Display Production Deployment Version
+        shell: pwsh
+        run: |
+          Write-Host "Organization database version approved for PROD:"
+          Write-Host "${{ inputs.database_version }}"
+
+          "### Production Organization Database Deployment" >> $env:GITHUB_STEP_SUMMARY
+          "**Version:** ${{ inputs.database_version }}" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Download Approved Organization Database Artifact
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DATABASE_VERSION: ${{ inputs.database_version }}
+        run: |
+          $artifactName = "TexasMediaDart.Organization.Database-$env:DATABASE_VERSION"
+
+          Write-Host "Looking for artifact:"
+          Write-Host $artifactName
+
+          $response = gh api `
+            "repos/${{ github.repository }}/actions/artifacts?per_page=100"
+
+          $artifacts = $response | ConvertFrom-Json
+
+          $artifact = $artifacts.artifacts |
+            Where-Object {
+              $_.name -eq $artifactName -and
+              $_.expired -eq $false
+            } |
+            Sort-Object created_at -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $artifact) {
+            Write-Error "Artifact '$artifactName' was not found or has expired."
+            exit 1
+          }
+
+          Write-Host "Artifact found:"
+          Write-Host "Name: $($artifact.name)"
+          Write-Host "ID:   $($artifact.id)"
+
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "dacpac" | Out-Null
+
+          $headers = @{
+            Authorization = "Bearer $env:GITHUB_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+
+          Invoke-WebRequest `
+            -Uri $artifact.archive_download_url `
+            -Headers $headers `
+            -OutFile "artifact.zip"
+
+          Expand-Archive `
+            -Path "artifact.zip" `
+            -DestinationPath "dacpac" `
+            -Force
+
+          Write-Host "Artifact downloaded successfully."
+
+      - name: Verify Approved DACPAC
+        shell: pwsh
+        env:
+          DATABASE_VERSION: ${{ inputs.database_version }}
+        run: |
+          $dacpac =
+            "dacpac/TexasMediaDart.Organization.Database-$env:DATABASE_VERSION.dacpac"
+
+          if (-not (Test-Path $dacpac)) {
+            Write-Error "Approved Organization DACPAC was not found:"
+            Write-Error $dacpac
+            exit 1
+          }
+
+          Write-Host "Approved PROD Organization DACPAC:"
+          Write-Host $dacpac
+
+      - name: Deploy DACPAC to Production
+        uses: azure/sql-action@v2.3
+        with:
+          connection-string: ${{ secrets.ORGANIZATION_DATABASE_PROD_CONNECTION_STRING }}
+          path: dacpac/TexasMediaDart.Organization.Database-${{ inputs.database_version }}.dacpac
+          action: publish
+
+      - name: Record Production Database Version
+        shell: pwsh
+        env:
+          DB_CONNECTION_STRING: ${{ secrets.ORGANIZATION_DATABASE_PROD_CONNECTION_STRING }}
+          DATABASE_VERSION: ${{ inputs.database_version }}
+        run: |
+          Write-Host "Recording PROD Organization database version:"
+          Write-Host $env:DATABASE_VERSION
+
+          Add-Type -AssemblyName System.Data
+
+          $connection = New-Object System.Data.SqlClient.SqlConnection
+          $connection.ConnectionString = $env:DB_CONNECTION_STRING
+          $connection.Open()
+
+          $command = $connection.CreateCommand()
+
+          $command.CommandText = @"
+          IF EXISTS (
+              SELECT 1
+              FROM dbo.DatabaseVersion
+              WHERE Id = 1
+          )
+          BEGIN
+              UPDATE dbo.DatabaseVersion
+              SET
+                  Version = @Version,
+                  DeployedUtc = SYSUTCDATETIME()
+              WHERE Id = 1;
+          END
+          ELSE
+          BEGIN
+              INSERT INTO dbo.DatabaseVersion
+              (
+                  Id,
+                  Version,
+                  DeployedUtc
+              )
+              VALUES
+              (
+                  1,
+                  @Version,
+                  SYSUTCDATETIME()
+              );
+          END
+          "@
+
+          $parameter = $command.Parameters.Add(
+              "@Version",
+              [System.Data.SqlDbType]::NVarChar,
+              20
+          )
+
+          $parameter.Value = $env:DATABASE_VERSION
+
+          $command.ExecuteNonQuery() | Out-Null
+
+          $connection.Close()
+
+          Write-Host "Production Organization database version recorded successfully."

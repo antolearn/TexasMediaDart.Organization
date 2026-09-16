@@ -1,0 +1,101 @@
+name: Organization API Deploy - Prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_version:
+        description: 'Approved Organization API version from DEV (example: 2026.09.15.0010)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+env:
+  AZURE_WEBAPP_NAME: 'texasmediadart-organization-prod'
+
+jobs:
+  deploy-prod:
+    name: Deploy Organization API to Production
+    runs-on: ubuntu-latest
+
+    environment:
+      name: prod
+
+    steps:
+      - name: Display Production Organization API Version
+        shell: bash
+        run: |
+          echo "Organization API version approved for PROD:"
+          echo "${{ inputs.api_version }}"
+
+          echo "### Production Organization API Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** ${{ inputs.api_version }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download Approved Organization API Artifact
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          API_VERSION: ${{ inputs.api_version }}
+        run: |
+          ARTIFACT_NAME="TexasMediaDart.Organization.Api-${API_VERSION}"
+
+          echo "Looking for artifact:"
+          echo "$ARTIFACT_NAME"
+
+          ARTIFACT_ID=$(gh api \
+            "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            --jq ".artifacts
+              | map(select(.name == \"$ARTIFACT_NAME\" and .expired == false))
+              | sort_by(.created_at)
+              | reverse
+              | .[0].id")
+
+          if [ -z "$ARTIFACT_ID" ] || [ "$ARTIFACT_ID" = "null" ]; then
+            echo "Artifact '$ARTIFACT_NAME' was not found or has expired."
+            exit 1
+          fi
+
+          echo "Artifact found."
+          echo "Artifact ID: $ARTIFACT_ID"
+
+          mkdir -p artifacts
+
+          gh api \
+            "repos/${{ github.repository }}/actions/artifacts/${ARTIFACT_ID}/zip" \
+            > artifact.zip
+
+          unzip -o artifact.zip -d artifacts
+
+          echo "Artifact downloaded successfully."
+
+      - name: Verify Approved Organization API Package
+        shell: bash
+        env:
+          API_VERSION: ${{ inputs.api_version }}
+        run: |
+          PACKAGE="artifacts/TexasMediaDart.Organization.Api-${API_VERSION}.zip"
+
+          if [ ! -f "$PACKAGE" ]; then
+            echo "Approved Organization API package was not found:"
+            echo "$PACKAGE"
+            exit 1
+          fi
+
+          echo "Approved PROD Organization API package:"
+          echo "$PACKAGE"
+
+      - name: Login to Azure using OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Organization API to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: artifacts/TexasMediaDart.Organization.Api-${{ inputs.api_version }}.zip
