@@ -63,4 +63,25 @@ public sealed class OrganizationRepository : IOrganizationRepository
     return await connection.QuerySingleAsync<CreateOrganizationResultDto>(
         command);
 }
+public async Task<IReadOnlyList<UserModulePermissionDto>> GetUserModulesAsync(
+    Guid identityUserId,
+    CancellationToken cancellationToken = default)
+{
+    await using var connection =
+        new SqlConnection(_connectionString);
+
+    var command = new CommandDefinition(
+        commandText: "[dbo].[sp_User_GetEffectiveModulePermissions]",
+        parameters: new
+        {
+            IdentityUserId = identityUserId
+        },
+        commandType: CommandType.StoredProcedure,
+        cancellationToken: cancellationToken);
+
+    var modules =
+        await connection.QueryAsync<UserModulePermissionDto>(command);
+
+    return modules.AsList();
+}
 }

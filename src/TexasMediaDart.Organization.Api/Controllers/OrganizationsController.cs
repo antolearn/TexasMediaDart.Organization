@@ -5,6 +5,7 @@ using TexasMediaDart.Organization.Application.Common.CQRS;
 using TexasMediaDart.Organization.Application.Organizations.Commands.CreateOrganization;
 using TexasMediaDart.Organization.Application.Organizations.Models;
 using TexasMediaDart.Organization.Application.Organizations.Queries.GetCurrentOrganization;
+using TexasMediaDart.Organization.Application.Organizations.Queries.GetCurrentUserModules;
 
 namespace TexasMediaDart.Organization.Api.Controllers;
 
@@ -20,6 +21,9 @@ public sealed class OrganizationsController : ControllerBase
     private readonly ICommandHandler<
         CreateOrganizationCommand,
         CreateOrganizationResultDto> _createOrganizationHandler;
+    private readonly IQueryHandler<
+        GetCurrentUserModulesQuery,
+        IReadOnlyList<UserModulePermissionDto>> _getCurrentUserModulesHandler;
 
     public OrganizationsController(
         IQueryHandler<
@@ -27,10 +31,14 @@ public sealed class OrganizationsController : ControllerBase
             CurrentOrganizationDto?> getCurrentOrganizationHandler,
         ICommandHandler<
             CreateOrganizationCommand,
-            CreateOrganizationResultDto> createOrganizationHandler)
+            CreateOrganizationResultDto> createOrganizationHandler,
+        IQueryHandler<
+            GetCurrentUserModulesQuery,
+            IReadOnlyList<UserModulePermissionDto>> getCurrentUserModulesHandler)
     {
         _getCurrentOrganizationHandler = getCurrentOrganizationHandler;
         _createOrganizationHandler = createOrganizationHandler;
+        _getCurrentUserModulesHandler = getCurrentUserModulesHandler;
     }
 
     [HttpGet("current")]
@@ -125,6 +133,33 @@ public sealed class OrganizationsController : ControllerBase
             null,
             result);
     }
+    [HttpGet("current/modules")]
+public async Task<IActionResult> GetCurrentUserModules(
+    CancellationToken cancellationToken)
+{
+    var identityUserIdValue =
+        User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? User.FindFirstValue("sub");
+
+    if (!Guid.TryParse(identityUserIdValue, out var identityUserId))
+    {
+        return Unauthorized(new
+        {
+            message =
+                "The authenticated user does not contain a valid identity user id."
+        });
+    }
+
+    var query =
+        new GetCurrentUserModulesQuery(identityUserId);
+
+    var modules =
+        await _getCurrentUserModulesHandler.HandleAsync(
+            query,
+            cancellationToken);
+
+    return Ok(modules);
+}
 }
 
 public sealed class CreateOrganizationRequest
