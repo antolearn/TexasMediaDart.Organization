@@ -32,6 +32,12 @@ BEGIN
         M.[Id] AS [ModuleId],
         M.[Code] AS [ModuleCode],
         M.[Name] AS [ModuleName],
+        M.[Description],
+        M.[Route],
+        M.[IconKey],
+        M.[MenuGroup],
+        M.[DisplayOrder],
+        M.[ShowInMenu],
 
         CAST
         (
@@ -85,10 +91,16 @@ BEGIN
     GROUP BY
         M.[Id],
         M.[Code],
-        M.[Name]
+        M.[Name],
+        M.[Description],
+        M.[Route],
+        M.[IconKey],
+        M.[MenuGroup],
+        M.[DisplayOrder],
+        M.[ShowInMenu]
 
     ORDER BY
-        M.[Name],
-        M.[Code];
+        M.[DisplayOrder],
+        M.[Name];
 END;
 GO
