@@ -9,6 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 using TexasMediaDart.Organization.Application.Organizations.Commands.CreateOrganization;
 using TexasMediaDart.Organization.Api.ExceptionHandling;
 using TexasMediaDart.Organization.Api.Extensions;
+using TexasMediaDart.Organization.Application.Organizations.Queries.GetCurrentUserModules;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +24,17 @@ builder.Services.AddScoped<
     GetCurrentOrganizationQueryHandler>();
 var jwtIssuer = builder.Configuration["Jwt:Issuer"]
     ?? throw new InvalidOperationException("Jwt:Issuer is not configured.");
+
+builder.Services.AddScoped<
+    IQueryHandler<GetCurrentOrganizationQuery, CurrentOrganizationDto?>,
+    GetCurrentOrganizationQueryHandler>();
+    
+builder.Services.AddScoped<
+    IQueryHandler<
+        GetCurrentUserModulesQuery,
+        IReadOnlyList<UserModulePermissionDto>>,
+    GetCurrentUserModulesQueryHandler>();
+
 
 builder.Services.AddScoped<
     ICommandHandler<CreateOrganizationCommand, CreateOrganizationResultDto>,
