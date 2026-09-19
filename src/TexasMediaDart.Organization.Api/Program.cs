@@ -10,6 +10,11 @@ using TexasMediaDart.Organization.Application.Organizations.Commands.CreateOrgan
 using TexasMediaDart.Organization.Api.ExceptionHandling;
 using TexasMediaDart.Organization.Api.Extensions;
 using TexasMediaDart.Organization.Application.Organizations.Queries.GetCurrentUserModules;
+using TexasMediaDart.Organization.Application.Users.Abstractions;
+using TexasMediaDart.Organization.Infrastructure.Users;
+using TexasMediaDart.Organization.Application.Users.Models;
+using TexasMediaDart.Organization.Application.Users.Queries.SearchUsers;
+using TexasMediaDart.Organization.Application.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +23,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 builder.Services.AddScoped<IOrganizationRepository, OrganizationRepository>();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+
 
 builder.Services.AddScoped<
     IQueryHandler<GetCurrentOrganizationQuery, CurrentOrganizationDto?>,
@@ -35,10 +42,17 @@ builder.Services.AddScoped<
         IReadOnlyList<UserModulePermissionDto>>,
     GetCurrentUserModulesQueryHandler>();
 
+builder.Services.AddScoped<
+    IQueryHandler<SearchUsersQuery, OrganizationUserSearchResultDto>,
+    SearchUsersQueryHandler>();
+
 
 builder.Services.AddScoped<
     ICommandHandler<CreateOrganizationCommand, CreateOrganizationResultDto>,
     CreateOrganizationCommandHandler>();
+builder.Services.AddScoped<
+    IModuleAuthorizationService,
+    ModuleAuthorizationService>();
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
