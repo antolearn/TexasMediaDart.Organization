@@ -8,6 +8,15 @@ public static class HealthEndpointExtensions
     public static WebApplication MapHealthEndpoints(
         this WebApplication app)
     {
+        app.MapGet("/health/api", () =>
+        {
+            return Results.Ok(new
+            {
+                status = "Healthy",
+                service = "TexasMediaDart.Organization.Api",
+                timestampUtc = DateTime.UtcNow
+            });
+        });
         app.MapGet("/health/db", async (IConfiguration configuration) =>
         {
             var connectionString =
