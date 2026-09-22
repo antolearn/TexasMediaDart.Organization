@@ -14,6 +14,7 @@ namespace TexasMediaDart.Organization.Api.Controllers;
 public sealed class UsersController : ControllerBase
 {
     private const string UsersModuleCode = "USERS";
+    private readonly IOrganizationAccessService _organizationAccessService;
 
     private readonly IQueryHandler<
         SearchUsersQuery,
@@ -25,10 +26,12 @@ public sealed class UsersController : ControllerBase
         IQueryHandler<
             SearchUsersQuery,
             OrganizationUserSearchResultDto> searchUsersHandler,
-        IModuleAuthorizationService moduleAuthorizationService)
+            IModuleAuthorizationService moduleAuthorizationService,
+            IOrganizationAccessService organizationAccessService)
     {
         _searchUsersHandler = searchUsersHandler;
         _moduleAuthorizationService = moduleAuthorizationService;
+        _organizationAccessService = organizationAccessService;
     }
 
     [HttpGet]
@@ -60,17 +63,26 @@ public sealed class UsersController : ControllerBase
             });
         }
 
-        var canRead =
-            await _moduleAuthorizationService.CanReadAsync(
-                authenticatedIdentityUserId,
-                UsersModuleCode,
-                cancellationToken);
+var hasActiveOrganization =
+    await _organizationAccessService.HasActiveOrganizationAsync(
+        authenticatedIdentityUserId,
+        cancellationToken);
 
-        if (!canRead)
-        {
-            return Forbid();
-        }
+if (!hasActiveOrganization)
+{
+    return Forbid();
+}
 
+var canRead =
+    await _moduleAuthorizationService.CanReadAsync(
+        authenticatedIdentityUserId,
+        UsersModuleCode,
+        cancellationToken);
+
+if (!canRead)
+{
+    return Forbid();
+}
         var query = new SearchUsersQuery(
             authenticatedIdentityUserId,
             identityUserId,

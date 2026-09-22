@@ -39,8 +39,6 @@ BEGIN
         ON O.[Id] = OU.[OrganizationId]
 
     WHERE OU.[IdentityUserId] = @IdentityUserId
-      AND OU.[IsActive] = 1
-      AND O.[IsActive] = 1
       AND O.[IsDeleted] = 0;
 END;
 GO
