@@ -15,6 +15,7 @@ using TexasMediaDart.Organization.Infrastructure.Users;
 using TexasMediaDart.Organization.Application.Users.Models;
 using TexasMediaDart.Organization.Application.Users.Queries.SearchUsers;
 using TexasMediaDart.Organization.Application.Authorization;
+using TexasMediaDart.Organization.Application.Organizations.Commands.UpdateOrganization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,16 +27,13 @@ builder.Services.AddScoped<IOrganizationRepository, OrganizationRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 
 
-builder.Services.AddScoped<
-    IQueryHandler<GetCurrentOrganizationQuery, CurrentOrganizationDto?>,
-    GetCurrentOrganizationQueryHandler>();
 var jwtIssuer = builder.Configuration["Jwt:Issuer"]
     ?? throw new InvalidOperationException("Jwt:Issuer is not configured.");
 
 builder.Services.AddScoped<
     IQueryHandler<GetCurrentOrganizationQuery, CurrentOrganizationDto?>,
     GetCurrentOrganizationQueryHandler>();
-    
+
 builder.Services.AddScoped<
     IQueryHandler<
         GetCurrentUserModulesQuery,
@@ -51,8 +49,14 @@ builder.Services.AddScoped<
     ICommandHandler<CreateOrganizationCommand, CreateOrganizationResultDto>,
     CreateOrganizationCommandHandler>();
 builder.Services.AddScoped<
+    ICommandHandler<UpdateOrganizationCommand, CurrentOrganizationDto>,
+    UpdateOrganizationCommandHandler>();
+builder.Services.AddScoped<
     IModuleAuthorizationService,
     ModuleAuthorizationService>();
+builder.Services.AddScoped<
+    IOrganizationAccessService,
+    OrganizationAccessService>();
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
@@ -85,7 +89,7 @@ builder.Services
         };
     });
 
-    const string CorsPolicy = "FrontendCorsPolicy";
+const string CorsPolicy = "FrontendCorsPolicy";
 
 var allowedOrigins =
     builder.Configuration

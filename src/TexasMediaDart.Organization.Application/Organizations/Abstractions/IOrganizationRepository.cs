@@ -14,6 +14,14 @@ public interface IOrganizationRepository
         Guid identityUserId,
         string userEmail,
         CancellationToken cancellationToken = default);
+
+    Task<CurrentOrganizationDto> UpdateAsync(
+        Guid identityUserId,
+        string name,
+        bool isActive,
+        string modifiedBy,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<UserModulePermissionDto>> GetUserModulesAsync(
         Guid identityUserId,
         CancellationToken cancellationToken = default);
