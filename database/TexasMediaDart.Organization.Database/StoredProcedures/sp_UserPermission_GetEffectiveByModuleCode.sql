@@ -1,13 +1,37 @@
 CREATE PROCEDURE [dbo].[sp_UserPermission_GetEffectiveByModuleCode]
     @OrganizationId UNIQUEIDENTIFIER,
     @IdentityUserId UNIQUEIDENTIFIER,
-    @ModuleCode NVARCHAR(50)
+    @ModuleCode NVARCHAR(100)
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    DECLARE @OrganizationUserId BIGINT;
-    DECLARE @NormalizedModuleCode NVARCHAR(50);
+    DECLARE
+        @OrganizationUserId BIGINT,
+        @NormalizedModuleCode NVARCHAR(100),
+        @ModuleId INT,
+        @NowUtc DATETIME2(7) = SYSUTCDATETIME(),
+
+        @SupportsCreate BIT = 0,
+        @SupportsUpdate BIT = 0,
+        @SupportsDelete BIT = 0,
+        @SupportsRead BIT = 0,
+        @SupportsApprove BIT = 0,
+
+        @IsModuleEntitled BIT = 0,
+
+        @AllowedCanCreate BIT = 0,
+        @AllowedCanUpdate BIT = 0,
+        @AllowedCanDelete BIT = 0,
+        @AllowedCanRead BIT = 0,
+
+        @HasApprovalFeature BIT = 0,
+
+        @RoleCanCreate BIT = 0,
+        @RoleCanUpdate BIT = 0,
+        @RoleCanDelete BIT = 0,
+        @RoleCanRead BIT = 0,
+        @RoleCanApprove BIT = 0;
 
     ------------------------------------------------------------
     -- Normalize
@@ -36,6 +60,24 @@ BEGIN
     END;
 
     ------------------------------------------------------------
+    -- Verify organization
+    ------------------------------------------------------------
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM [dbo].[Organizations]
+        WHERE [Id] = @OrganizationId
+          AND [IsActive] = 1
+          AND [IsDeleted] = 0
+    )
+    BEGIN
+        THROW 56406,
+            'The organization does not exist or is inactive.',
+            1;
+    END;
+
+    ------------------------------------------------------------
     -- Resolve active + approved organization user
     ------------------------------------------------------------
 
@@ -55,13 +97,16 @@ BEGIN
     END;
 
     ------------------------------------------------------------
-    -- Find requested active module
+    -- Find requested active module and its supported actions
     ------------------------------------------------------------
 
-    DECLARE @ModuleId INT;
-
     SELECT
-        @ModuleId = M.[Id]
+        @ModuleId = M.[Id],
+        @SupportsCreate = M.[SupportsCreate],
+        @SupportsUpdate = M.[SupportsUpdate],
+        @SupportsDelete = M.[SupportsDelete],
+        @SupportsRead = M.[SupportsRead],
+        @SupportsApprove = M.[SupportsApprove]
     FROM [dbo].[Modules] M
     WHERE UPPER(M.[Code]) = @NormalizedModuleCode
       AND M.[IsActive] = 1;
@@ -74,26 +119,83 @@ BEGIN
     END;
 
     ------------------------------------------------------------
-    -- Calculate organization entitlement
+    -- Determine whether requested module is currently entitled.
+    --
+    -- Module entitlement is separate from permission defaults.
+    -- A module is entitled when at least one current active
+    -- organization license maps to it.
     ------------------------------------------------------------
 
-    DECLARE @AllowedCanCreate BIT = 0;
-    DECLARE @AllowedCanUpdate BIT = 0;
-    DECLARE @AllowedCanDelete BIT = 0;
-    DECLARE @AllowedCanRead BIT = 0;
+    IF EXISTS
+    (
+        SELECT 1
+
+        FROM [dbo].[OrganizationLicenses] OL
+
+        INNER JOIN [dbo].[Licenses] L
+            ON L.[Id] = OL.[LicenseId]
+
+        INNER JOIN [dbo].[LicenseModules] LM
+            ON LM.[LicenseId] = OL.[LicenseId]
+
+        WHERE OL.[OrganizationId] = @OrganizationId
+          AND LM.[ModuleId] = @ModuleId
+
+          AND OL.[IsActive] = 1
+          AND L.[IsActive] = 1
+
+          AND OL.[StartUtc] <= @NowUtc
+
+          AND
+          (
+              OL.[EndUtc] IS NULL
+              OR OL.[EndUtc] > @NowUtc
+          )
+    )
+    BEGIN
+        SET @IsModuleEntitled = 1;
+    END;
+
+    ------------------------------------------------------------
+    -- Organization does not have this module licensed.
+    --
+    -- Preserve the existing procedure contract:
+    -- return no row for a module that is not entitled.
+    ------------------------------------------------------------
+
+    IF @IsModuleEntitled = 0
+    BEGIN
+        RETURN;
+    END;
+
+    ------------------------------------------------------------
+    -- Calculate organization permission entitlement
+    ------------------------------------------------------------
 
     SELECT
         @AllowedCanCreate =
-            CAST(MAX(CAST(LM.[DefaultCanCreate] AS TINYINT)) AS BIT),
+            CAST(
+                MAX(CAST(LM.[DefaultCanCreate] AS TINYINT))
+                AS BIT
+            ),
 
         @AllowedCanUpdate =
-            CAST(MAX(CAST(LM.[DefaultCanUpdate] AS TINYINT)) AS BIT),
+            CAST(
+                MAX(CAST(LM.[DefaultCanUpdate] AS TINYINT))
+                AS BIT
+            ),
 
         @AllowedCanDelete =
-            CAST(MAX(CAST(LM.[DefaultCanDelete] AS TINYINT)) AS BIT),
+            CAST(
+                MAX(CAST(LM.[DefaultCanDelete] AS TINYINT))
+                AS BIT
+            ),
 
         @AllowedCanRead =
-            CAST(MAX(CAST(LM.[DefaultCanRead] AS TINYINT)) AS BIT)
+            CAST(
+                MAX(CAST(LM.[DefaultCanRead] AS TINYINT))
+                AS BIT
+            )
 
     FROM [dbo].[OrganizationLicenses] OL
 
@@ -109,47 +211,100 @@ BEGIN
       AND OL.[IsActive] = 1
       AND L.[IsActive] = 1
 
-      AND OL.[StartUtc] <= SYSUTCDATETIME()
+      AND OL.[StartUtc] <= @NowUtc
 
       AND
       (
           OL.[EndUtc] IS NULL
-          OR OL.[EndUtc] > SYSUTCDATETIME()
+          OR OL.[EndUtc] > @NowUtc
       );
 
     ------------------------------------------------------------
-    -- Organization does not have this module licensed
+    -- Determine whether organization has approval capability
+    --
+    -- Approval requires:
+    --
+    --   WORKFLOW license
+    --       +
+    --   APPROVALS module mapped to WORKFLOW
+    --
+    -- This enables approval functionality but does not grant
+    -- approval authority to the user.
     ------------------------------------------------------------
 
-    IF ISNULL(@AllowedCanCreate, 0) = 0
-       AND ISNULL(@AllowedCanUpdate, 0) = 0
-       AND ISNULL(@AllowedCanDelete, 0) = 0
-       AND ISNULL(@AllowedCanRead, 0) = 0
+    IF EXISTS
+    (
+        SELECT 1
+
+        FROM [dbo].[OrganizationLicenses] OL
+
+        INNER JOIN [dbo].[Licenses] L
+            ON L.[Id] = OL.[LicenseId]
+
+        INNER JOIN [dbo].[LicenseModules] LM
+            ON LM.[LicenseId] = L.[Id]
+
+        INNER JOIN [dbo].[Modules] M
+            ON M.[Id] = LM.[ModuleId]
+
+        WHERE OL.[OrganizationId] = @OrganizationId
+
+          AND L.[Code] = N'WORKFLOW'
+          AND L.[IsActive] = 1
+
+          AND OL.[IsActive] = 1
+          AND OL.[StartUtc] <= @NowUtc
+
+          AND
+          (
+              OL.[EndUtc] IS NULL
+              OR OL.[EndUtc] > @NowUtc
+          )
+
+          AND M.[Code] = N'APPROVALS'
+          AND M.[IsActive] = 1
+    )
     BEGIN
-        RETURN;
+        SET @HasApprovalFeature = 1;
     END;
 
     ------------------------------------------------------------
     -- Calculate combined role permissions
+    --
+    -- Permissions are additive across all active and approved
+    -- roles assigned to this organization user.
     ------------------------------------------------------------
-
-    DECLARE @RoleCanCreate BIT = 0;
-    DECLARE @RoleCanUpdate BIT = 0;
-    DECLARE @RoleCanDelete BIT = 0;
-    DECLARE @RoleCanRead BIT = 0;
 
     SELECT
         @RoleCanCreate =
-            CAST(MAX(CAST(RP.[CanCreate] AS TINYINT)) AS BIT),
+            CAST(
+                MAX(CAST(RP.[CanCreate] AS TINYINT))
+                AS BIT
+            ),
 
         @RoleCanUpdate =
-            CAST(MAX(CAST(RP.[CanUpdate] AS TINYINT)) AS BIT),
+            CAST(
+                MAX(CAST(RP.[CanUpdate] AS TINYINT))
+                AS BIT
+            ),
 
         @RoleCanDelete =
-            CAST(MAX(CAST(RP.[CanDelete] AS TINYINT)) AS BIT),
+            CAST(
+                MAX(CAST(RP.[CanDelete] AS TINYINT))
+                AS BIT
+            ),
 
         @RoleCanRead =
-            CAST(MAX(CAST(RP.[CanRead] AS TINYINT)) AS BIT)
+            CAST(
+                MAX(CAST(RP.[CanRead] AS TINYINT))
+                AS BIT
+            ),
+
+        @RoleCanApprove =
+            CAST(
+                MAX(CAST(RP.[CanApprove] AS TINYINT))
+                AS BIT
+            )
 
     FROM [dbo].[UserRoles] UR
 
@@ -171,6 +326,20 @@ BEGIN
 
     ------------------------------------------------------------
     -- Return final effective permission
+    --
+    -- CRUD/read:
+    --
+    --   module entitled
+    --       AND license allows action
+    --       AND module supports action
+    --       AND role grants action
+    --
+    -- Approve:
+    --
+    --   business module entitled
+    --       AND module supports approval
+    --       AND WORKFLOW / APPROVALS enabled
+    --       AND role grants approval
     ------------------------------------------------------------
 
     SELECT
@@ -185,6 +354,7 @@ BEGIN
         (
             CASE
                 WHEN ISNULL(@AllowedCanCreate, 0) = 1
+                 AND @SupportsCreate = 1
                  AND ISNULL(@RoleCanCreate, 0) = 1
                 THEN 1
                 ELSE 0
@@ -196,6 +366,7 @@ BEGIN
         (
             CASE
                 WHEN ISNULL(@AllowedCanUpdate, 0) = 1
+                 AND @SupportsUpdate = 1
                  AND ISNULL(@RoleCanUpdate, 0) = 1
                 THEN 1
                 ELSE 0
@@ -207,6 +378,7 @@ BEGIN
         (
             CASE
                 WHEN ISNULL(@AllowedCanDelete, 0) = 1
+                 AND @SupportsDelete = 1
                  AND ISNULL(@RoleCanDelete, 0) = 1
                 THEN 1
                 ELSE 0
@@ -218,12 +390,25 @@ BEGIN
         (
             CASE
                 WHEN ISNULL(@AllowedCanRead, 0) = 1
+                 AND @SupportsRead = 1
                  AND ISNULL(@RoleCanRead, 0) = 1
                 THEN 1
                 ELSE 0
             END
             AS BIT
-        ) AS [CanRead]
+        ) AS [CanRead],
+
+        CAST
+        (
+            CASE
+                WHEN @SupportsApprove = 1
+                 AND @HasApprovalFeature = 1
+                 AND ISNULL(@RoleCanApprove, 0) = 1
+                THEN 1
+                ELSE 0
+            END
+            AS BIT
+        ) AS [CanApprove]
 
     FROM [dbo].[Modules] M
     WHERE M.[Id] = @ModuleId;

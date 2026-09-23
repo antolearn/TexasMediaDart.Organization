@@ -5,6 +5,10 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    DECLARE
+        @NowUtc DATETIME2(7) = SYSUTCDATETIME(),
+        @HasApprovalFeature BIT = 0;
+
     ------------------------------------------------------------
     -- Validation
     ------------------------------------------------------------
@@ -38,6 +42,54 @@ BEGIN
     END;
 
     ------------------------------------------------------------
+    -- Determine whether organization has approval capability
+    --
+    -- Approval requires:
+    --
+    --   1. Active WORKFLOW license
+    --   2. APPROVALS module mapped to WORKFLOW
+    --   3. APPROVALS module active
+    --
+    -- This enables approval functionality at organization level.
+    -- It does not itself grant CanApprove to the role.
+    ------------------------------------------------------------
+
+    IF EXISTS
+    (
+        SELECT 1
+
+        FROM [dbo].[OrganizationLicenses] OL
+
+        INNER JOIN [dbo].[Licenses] L
+            ON L.[Id] = OL.[LicenseId]
+
+        INNER JOIN [dbo].[LicenseModules] LM
+            ON LM.[LicenseId] = L.[Id]
+
+        INNER JOIN [dbo].[Modules] M
+            ON M.[Id] = LM.[ModuleId]
+
+        WHERE OL.[OrganizationId] = @OrganizationId
+
+          AND L.[Code] = N'WORKFLOW'
+          AND L.[IsActive] = 1
+
+          AND OL.[IsActive] = 1
+          AND OL.[StartUtc] <= @NowUtc
+          AND
+          (
+              OL.[EndUtc] IS NULL
+              OR OL.[EndUtc] > @NowUtc
+          )
+
+          AND M.[Code] = N'APPROVALS'
+          AND M.[IsActive] = 1
+    )
+    BEGIN
+        SET @HasApprovalFeature = 1;
+    END;
+
+    ------------------------------------------------------------
     -- Determine modules currently entitled to organization.
     --
     -- A module can theoretically appear in more than one
@@ -49,17 +101,25 @@ BEGIN
         SELECT
             LM.[ModuleId],
 
-            CAST(MAX(CAST(LM.[DefaultCanCreate] AS TINYINT)) AS BIT)
-                AS [AllowedCanCreate],
+            CAST(
+                MAX(CAST(LM.[DefaultCanCreate] AS TINYINT))
+                AS BIT
+            ) AS [AllowedCanCreate],
 
-            CAST(MAX(CAST(LM.[DefaultCanUpdate] AS TINYINT)) AS BIT)
-                AS [AllowedCanUpdate],
+            CAST(
+                MAX(CAST(LM.[DefaultCanUpdate] AS TINYINT))
+                AS BIT
+            ) AS [AllowedCanUpdate],
 
-            CAST(MAX(CAST(LM.[DefaultCanDelete] AS TINYINT)) AS BIT)
-                AS [AllowedCanDelete],
+            CAST(
+                MAX(CAST(LM.[DefaultCanDelete] AS TINYINT))
+                AS BIT
+            ) AS [AllowedCanDelete],
 
-            CAST(MAX(CAST(LM.[DefaultCanRead] AS TINYINT)) AS BIT)
-                AS [AllowedCanRead]
+            CAST(
+                MAX(CAST(LM.[DefaultCanRead] AS TINYINT))
+                AS BIT
+            ) AS [AllowedCanRead]
 
         FROM [dbo].[OrganizationLicenses] OL
 
@@ -69,16 +129,20 @@ BEGIN
         INNER JOIN [dbo].[LicenseModules] LM
             ON LM.[LicenseId] = OL.[LicenseId]
 
+        INNER JOIN [dbo].[Modules] M
+            ON M.[Id] = LM.[ModuleId]
+
         WHERE OL.[OrganizationId] = @OrganizationId
           AND OL.[IsActive] = 1
           AND L.[IsActive] = 1
+          AND M.[IsActive] = 1
 
-          AND OL.[StartUtc] <= SYSUTCDATETIME()
+          AND OL.[StartUtc] <= @NowUtc
 
           AND
           (
               OL.[EndUtc] IS NULL
-              OR OL.[EndUtc] > SYSUTCDATETIME()
+              OR OL.[EndUtc] > @NowUtc
           )
 
         GROUP BY
@@ -95,27 +159,86 @@ BEGIN
     SELECT
         @RoleId AS [RoleId],
 
-        M.[Id] AS [ModuleId],
+        M.[Id]   AS [ModuleId],
         M.[Code] AS [ModuleCode],
         M.[Name] AS [ModuleName],
 
         --------------------------------------------------------
-        -- Maximum permissions allowed by licensing
+        -- Module capability metadata
+        --
+        -- Used by API/UI to determine which actions make sense
+        -- for this module.
         --------------------------------------------------------
 
-        E.[AllowedCanCreate],
-        E.[AllowedCanUpdate],
-        E.[AllowedCanDelete],
-        E.[AllowedCanRead],
+        M.[SupportsCreate],
+        M.[SupportsRead],
+        M.[SupportsUpdate],
+        M.[SupportsDelete],
+        M.[SupportsApprove],
 
         --------------------------------------------------------
-        -- Actual role permissions
+        -- Maximum permissions allowed by licensing / features
+        --------------------------------------------------------
+
+        CAST(
+            CASE
+                WHEN E.[AllowedCanCreate] = 1
+                 AND M.[SupportsCreate] = 1
+                THEN 1
+                ELSE 0
+            END
+            AS BIT
+        ) AS [AllowedCanCreate],
+
+        CAST(
+            CASE
+                WHEN E.[AllowedCanUpdate] = 1
+                 AND M.[SupportsUpdate] = 1
+                THEN 1
+                ELSE 0
+            END
+            AS BIT
+        ) AS [AllowedCanUpdate],
+
+        CAST(
+            CASE
+                WHEN E.[AllowedCanDelete] = 1
+                 AND M.[SupportsDelete] = 1
+                THEN 1
+                ELSE 0
+            END
+            AS BIT
+        ) AS [AllowedCanDelete],
+
+        CAST(
+            CASE
+                WHEN E.[AllowedCanRead] = 1
+                 AND M.[SupportsRead] = 1
+                THEN 1
+                ELSE 0
+            END
+            AS BIT
+        ) AS [AllowedCanRead],
+
+        CAST(
+            CASE
+                WHEN M.[SupportsApprove] = 1
+                 AND @HasApprovalFeature = 1
+                THEN 1
+                ELSE 0
+            END
+            AS BIT
+        ) AS [AllowedCanApprove],
+
+        --------------------------------------------------------
+        -- Actual effective role permissions
         --------------------------------------------------------
 
         CAST(
             CASE
                 WHEN RP.[CanCreate] = 1
                  AND E.[AllowedCanCreate] = 1
+                 AND M.[SupportsCreate] = 1
                 THEN 1
                 ELSE 0
             END
@@ -126,6 +249,7 @@ BEGIN
             CASE
                 WHEN RP.[CanUpdate] = 1
                  AND E.[AllowedCanUpdate] = 1
+                 AND M.[SupportsUpdate] = 1
                 THEN 1
                 ELSE 0
             END
@@ -136,6 +260,7 @@ BEGIN
             CASE
                 WHEN RP.[CanDelete] = 1
                  AND E.[AllowedCanDelete] = 1
+                 AND M.[SupportsDelete] = 1
                 THEN 1
                 ELSE 0
             END
@@ -146,11 +271,27 @@ BEGIN
             CASE
                 WHEN RP.[CanRead] = 1
                  AND E.[AllowedCanRead] = 1
+                 AND M.[SupportsRead] = 1
                 THEN 1
                 ELSE 0
             END
             AS BIT
         ) AS [CanRead],
+
+        CAST(
+            CASE
+                WHEN RP.[CanApprove] = 1
+                 AND M.[SupportsApprove] = 1
+                 AND @HasApprovalFeature = 1
+                THEN 1
+                ELSE 0
+            END
+            AS BIT
+        ) AS [CanApprove],
+
+        --------------------------------------------------------
+        -- Audit
+        --------------------------------------------------------
 
         RP.[CreatedBy],
         RP.[CreatedUtc],

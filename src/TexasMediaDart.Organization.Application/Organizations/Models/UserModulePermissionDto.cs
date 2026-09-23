@@ -31,4 +31,6 @@ public sealed class UserModulePermissionDto
     public bool CanDelete { get; init; }
 
     public bool CanRead { get; init; }
+
+    public bool CanApprove { get; init; }
 }

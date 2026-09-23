@@ -22,6 +22,26 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
     {
         var problemDetails = exception switch
         {
+            // ------------------------------------------------------------
+            // Application exceptions
+            // ------------------------------------------------------------
+
+            ValidationException validationException =>
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "Invalid request",
+                    Detail = validationException.Message
+                },
+
+            NotFoundException notFoundException =>
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status404NotFound,
+                    Title = "Not found",
+                    Detail = notFoundException.Message
+                },
+
             ConflictException conflictException =>
                 new ProblemDetails
                 {
@@ -30,6 +50,10 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                     Detail = conflictException.Message
                 },
 
+            // ------------------------------------------------------------
+            // Standard argument validation
+            // ------------------------------------------------------------
+
             ArgumentException argumentException =>
                 new ProblemDetails
                 {
@@ -37,6 +61,14 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                     Title = "Invalid request",
                     Detail = argumentException.Message
                 },
+
+            // ------------------------------------------------------------
+            // Existing Organization database exceptions
+            //
+            // Keep these for backward compatibility.
+            // New features should preferably translate database-specific
+            // exceptions in Infrastructure into Application exceptions.
+            // ------------------------------------------------------------
 
             SqlException sqlException
                 when sqlException.Number == 51000 =>
@@ -74,14 +106,23 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                     Detail = sqlException.Message
                 },
 
+            // ------------------------------------------------------------
+            // SQL unique constraint violations
+            // ------------------------------------------------------------
+
             SqlException sqlException
                 when sqlException.Number is 2601 or 2627 =>
                 new ProblemDetails
                 {
                     Status = StatusCodes.Status409Conflict,
                     Title = "Data conflict",
-                    Detail = "The requested operation conflicts with existing data."
+                    Detail =
+                        "The requested operation conflicts with existing data."
                 },
+
+            // ------------------------------------------------------------
+            // Organization configuration errors
+            // ------------------------------------------------------------
 
             SqlException sqlException
                 when sqlException.Number == 51003 =>
@@ -89,15 +130,21 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                 {
                     Status = StatusCodes.Status500InternalServerError,
                     Title = "Organization configuration error",
-                    Detail = "The organization could not be created because the CORE license is not configured."
+                    Detail =
+                        "The organization could not be created because the CORE license is not configured."
                 },
+
+            // ------------------------------------------------------------
+            // Unexpected exceptions
+            // ------------------------------------------------------------
 
             _ =>
                 new ProblemDetails
                 {
                     Status = StatusCodes.Status500InternalServerError,
                     Title = "An unexpected error occurred.",
-                    Detail = "The server encountered an unexpected error while processing the request."
+                    Detail =
+                        "The server encountered an unexpected error while processing the request."
                 }
         };
 
@@ -107,7 +154,12 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
         problemDetails.Instance =
             httpContext.Request.Path;
 
-        if (problemDetails.Status >= 500)
+        // ------------------------------------------------------------
+        // Logging
+        // ------------------------------------------------------------
+
+        if (problemDetails.Status >=
+            StatusCodes.Status500InternalServerError)
         {
             _logger.LogError(
                 exception,
@@ -124,6 +176,10 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                 httpContext.Request.Method,
                 httpContext.Request.Path);
         }
+
+        // ------------------------------------------------------------
+        // HTTP response
+        // ------------------------------------------------------------
 
         httpContext.Response.StatusCode =
             problemDetails.Status

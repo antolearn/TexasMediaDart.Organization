@@ -8,7 +8,10 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    DECLARE @AuditEmail NVARCHAR(100);
+    DECLARE
+        @AuditEmail NVARCHAR(100),
+        @NowUtc DATETIME2(7) = SYSUTCDATETIME(),
+        @HasApprovalFeature BIT = 0;
 
     ------------------------------------------------------------
     -- Normalize audit email
@@ -78,7 +81,13 @@ BEGIN
         BEGIN TRANSACTION;
 
         ------------------------------------------------------------
-        -- Build current entitlement matrix
+        -- Build current organization entitlement matrix
+        --
+        -- Create / Update / Delete / Read are derived from the
+        -- organization's active license/module entitlements.
+        --
+        -- Approval is intentionally handled separately because
+        -- approval requires the WORKFLOW / APPROVALS capability.
         ------------------------------------------------------------
 
         DECLARE @Entitlements TABLE
@@ -122,17 +131,64 @@ BEGIN
           AND OL.[IsActive] = 1
           AND L.[IsActive] = 1
           AND M.[IsActive] = 1
-
-          AND OL.[StartUtc] <= SYSUTCDATETIME()
-
+          AND OL.[StartUtc] <= @NowUtc
           AND
           (
               OL.[EndUtc] IS NULL
-              OR OL.[EndUtc] > SYSUTCDATETIME()
+              OR OL.[EndUtc] > @NowUtc
           )
 
         GROUP BY
             LM.[ModuleId];
+
+        ------------------------------------------------------------
+        -- Determine whether organization has approval capability
+        --
+        -- Approval requires:
+        --
+        --   1. Active WORKFLOW license
+        --   2. Active APPROVALS module
+        --   3. APPROVALS mapped to WORKFLOW
+        --
+        -- This enables approval functionality at the organization
+        -- level. It does NOT by itself grant approval permission
+        -- to any role.
+        ------------------------------------------------------------
+
+        IF EXISTS
+        (
+            SELECT 1
+
+            FROM [dbo].[OrganizationLicenses] OL
+
+            INNER JOIN [dbo].[Licenses] L
+                ON L.[Id] = OL.[LicenseId]
+
+            INNER JOIN [dbo].[LicenseModules] LM
+                ON LM.[LicenseId] = L.[Id]
+
+            INNER JOIN [dbo].[Modules] M
+                ON M.[Id] = LM.[ModuleId]
+
+            WHERE OL.[OrganizationId] = @OrganizationId
+
+              AND L.[Code] = N'WORKFLOW'
+              AND L.[IsActive] = 1
+
+              AND OL.[IsActive] = 1
+              AND OL.[StartUtc] <= @NowUtc
+              AND
+              (
+                  OL.[EndUtc] IS NULL
+                  OR OL.[EndUtc] > @NowUtc
+              )
+
+              AND M.[Code] = N'APPROVALS'
+              AND M.[IsActive] = 1
+        )
+        BEGIN
+            SET @HasApprovalFeature = 1;
+        END;
 
         ------------------------------------------------------------
         -- Every supplied ModuleId must be entitled
@@ -141,6 +197,7 @@ BEGIN
         IF EXISTS
         (
             SELECT 1
+
             FROM @Permissions P
 
             LEFT JOIN @Entitlements E
@@ -155,7 +212,8 @@ BEGIN
         END;
 
         ------------------------------------------------------------
-        -- Requested permissions cannot exceed license entitlement
+        -- Requested CRUD/read permissions cannot exceed the
+        -- organization's license entitlement.
         ------------------------------------------------------------
 
         IF EXISTS
@@ -176,6 +234,63 @@ BEGIN
         BEGIN
             THROW 54607,
                 'One or more requested permissions exceed the organization license entitlement.',
+                1;
+        END;
+
+        ------------------------------------------------------------
+        -- Requested permissions must also be supported by module.
+        --
+        -- License entitlement and module capability are separate:
+        --
+        -- License = organization may use the feature
+        -- Supports* = action makes sense for this module
+        ------------------------------------------------------------
+
+        IF EXISTS
+        (
+            SELECT 1
+
+            FROM @Permissions P
+
+            INNER JOIN [dbo].[Modules] M
+                ON M.[Id] = P.[ModuleId]
+
+            WHERE
+                   (P.[CanCreate]  = 1 AND M.[SupportsCreate]  = 0)
+                OR (P.[CanUpdate]  = 1 AND M.[SupportsUpdate]  = 0)
+                OR (P.[CanDelete]  = 1 AND M.[SupportsDelete]  = 0)
+                OR (P.[CanRead]    = 1 AND M.[SupportsRead]    = 0)
+                OR (P.[CanApprove] = 1 AND M.[SupportsApprove] = 0)
+        )
+        BEGIN
+            THROW 54608,
+                'One or more requested permissions are not supported by the module.',
+                1;
+        END;
+
+        ------------------------------------------------------------
+        -- Approval requires WORKFLOW / APPROVALS entitlement.
+        --
+        -- Example:
+        --
+        -- ORDER.SupportsApprove = 1
+        -- SALES licensed        = 1
+        -- WORKFLOW licensed     = 1
+        -- APPROVALS available   = 1
+        --
+        -- Only then may ORDER.CanApprove be assigned to a role.
+        ------------------------------------------------------------
+
+        IF @HasApprovalFeature = 0
+           AND EXISTS
+           (
+               SELECT 1
+               FROM @Permissions
+               WHERE [CanApprove] = 1
+           )
+        BEGIN
+            THROW 54609,
+                'Approval permission requires the Workflow approval feature for this organization.',
                 1;
         END;
 
@@ -205,13 +320,14 @@ BEGIN
 
         UPDATE RP
         SET
-            RP.[CanCreate] = P.[CanCreate],
-            RP.[CanUpdate] = P.[CanUpdate],
-            RP.[CanDelete] = P.[CanDelete],
-            RP.[CanRead] = P.[CanRead],
+            RP.[CanCreate]   = P.[CanCreate],
+            RP.[CanUpdate]   = P.[CanUpdate],
+            RP.[CanDelete]   = P.[CanDelete],
+            RP.[CanRead]     = P.[CanRead],
+            RP.[CanApprove]  = P.[CanApprove],
 
-            RP.[ModifiedBy] = @AuditEmail,
-            RP.[ModifiedUtc] = SYSUTCDATETIME()
+            RP.[ModifiedBy]  = @AuditEmail,
+            RP.[ModifiedUtc] = @NowUtc
 
         FROM [dbo].[RolePermissions] RP
 
@@ -233,6 +349,7 @@ BEGIN
             [CanUpdate],
             [CanDelete],
             [CanRead],
+            [CanApprove],
 
             [CreatedBy]
         )
@@ -244,6 +361,7 @@ BEGIN
             P.[CanUpdate],
             P.[CanDelete],
             P.[CanRead],
+            P.[CanApprove],
 
             @AuditEmail
 
@@ -270,35 +388,15 @@ BEGIN
     END CATCH;
 
     ------------------------------------------------------------
-    -- Return resulting role permission matrix
+    -- Return complete resulting role permission matrix
+    --
+    -- Keep PUT response consistent with
+    -- GET /api/roles/{roleId}/permissions.
     ------------------------------------------------------------
 
-    SELECT
-        RP.[RoleId],
+    EXEC [dbo].[sp_Role_GetPermissions]
+        @RoleId = @RoleId,
+        @OrganizationId = @OrganizationId;
 
-        M.[Id] AS [ModuleId],
-        M.[Code] AS [ModuleCode],
-        M.[Name] AS [ModuleName],
-
-        RP.[CanCreate],
-        RP.[CanUpdate],
-        RP.[CanDelete],
-        RP.[CanRead],
-
-        RP.[CreatedBy],
-        RP.[CreatedUtc],
-        RP.[ModifiedBy],
-        RP.[ModifiedUtc]
-
-    FROM [dbo].[RolePermissions] RP
-
-    INNER JOIN [dbo].[Modules] M
-        ON M.[Id] = RP.[ModuleId]
-
-    WHERE RP.[RoleId] = @RoleId
-
-    ORDER BY
-        M.[Name],
-        M.[Code];
 END;
 GO
