@@ -6,107 +6,346 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    DECLARE
+        @NowUtc DATETIME2(7) = SYSUTCDATETIME();
+
+    ------------------------------------------------------------
+    -- Validation
+    ------------------------------------------------------------
+
+    IF @IdentityUserId IS NULL
+    BEGIN
+        THROW 56501, 'IdentityUserId is required.', 1;
+    END;
+
+    ------------------------------------------------------------
+    -- Build effective module permissions.
+    --
+    -- Permission model:
+    --
+    -- CRUD / Read:
+    --
+    --   Active organization license
+    --       AND module entitlement
+    --       AND module Supports*
+    --       AND active + approved role permission
+    --
+    -- Approve:
+    --
+    --   Business module entitlement
+    --       AND module SupportsApprove
+    --       AND active WORKFLOW / APPROVALS feature
+    --       AND active + approved role CanApprove
+    ------------------------------------------------------------
+
+    ;WITH EntitledModules AS
+    (
+        --------------------------------------------------------
+        -- Determine modules entitled to each organization.
+        --
+        -- Multiple licenses may theoretically contain the same
+        -- module, so aggregate the maximum allowed permission.
+        --------------------------------------------------------
+
+        SELECT
+            OL.[OrganizationId],
+            LM.[ModuleId],
+
+            CAST
+            (
+                MAX(CAST(LM.[DefaultCanCreate] AS TINYINT))
+                AS BIT
+            ) AS [AllowedCanCreate],
+
+            CAST
+            (
+                MAX(CAST(LM.[DefaultCanUpdate] AS TINYINT))
+                AS BIT
+            ) AS [AllowedCanUpdate],
+
+            CAST
+            (
+                MAX(CAST(LM.[DefaultCanDelete] AS TINYINT))
+                AS BIT
+            ) AS [AllowedCanDelete],
+
+            CAST
+            (
+                MAX(CAST(LM.[DefaultCanRead] AS TINYINT))
+                AS BIT
+            ) AS [AllowedCanRead]
+
+        FROM [dbo].[OrganizationLicenses] OL
+
+        INNER JOIN [dbo].[Licenses] L
+            ON L.[Id] = OL.[LicenseId]
+
+        INNER JOIN [dbo].[LicenseModules] LM
+            ON LM.[LicenseId] = OL.[LicenseId]
+
+        INNER JOIN [dbo].[Modules] M
+            ON M.[Id] = LM.[ModuleId]
+
+        WHERE OL.[IsActive] = 1
+          AND L.[IsActive] = 1
+          AND M.[IsActive] = 1
+
+          AND OL.[StartUtc] <= @NowUtc
+
+          AND
+          (
+              OL.[EndUtc] IS NULL
+              OR OL.[EndUtc] > @NowUtc
+          )
+
+        GROUP BY
+            OL.[OrganizationId],
+            LM.[ModuleId]
+    ),
+
+    ApprovalFeatures AS
+    (
+        --------------------------------------------------------
+        -- Organizations with active WORKFLOW / APPROVALS.
+        --
+        -- One row per organization.
+        --------------------------------------------------------
+
+        SELECT DISTINCT
+            OL.[OrganizationId]
+
+        FROM [dbo].[OrganizationLicenses] OL
+
+        INNER JOIN [dbo].[Licenses] L
+            ON L.[Id] = OL.[LicenseId]
+
+        INNER JOIN [dbo].[LicenseModules] LM
+            ON LM.[LicenseId] = L.[Id]
+
+        INNER JOIN [dbo].[Modules] M
+            ON M.[Id] = LM.[ModuleId]
+
+        WHERE L.[Code] = N'WORKFLOW'
+          AND L.[IsActive] = 1
+
+          AND OL.[IsActive] = 1
+          AND OL.[StartUtc] <= @NowUtc
+
+          AND
+          (
+              OL.[EndUtc] IS NULL
+              OR OL.[EndUtc] > @NowUtc
+          )
+
+          AND M.[Code] = N'APPROVALS'
+          AND M.[IsActive] = 1
+    ),
+
+    UserRolePermissions AS
+    (
+        --------------------------------------------------------
+        -- Aggregate permissions from every active + approved
+        -- role assigned to the organization user.
+        --
+        -- Roles are additive.
+        --------------------------------------------------------
+
+        SELECT
+            OU.[OrganizationId],
+            OU.[Id] AS [OrganizationUserId],
+            RP.[ModuleId],
+
+            CAST
+            (
+                MAX(CAST(RP.[CanCreate] AS TINYINT))
+                AS BIT
+            ) AS [RoleCanCreate],
+
+            CAST
+            (
+                MAX(CAST(RP.[CanUpdate] AS TINYINT))
+                AS BIT
+            ) AS [RoleCanUpdate],
+
+            CAST
+            (
+                MAX(CAST(RP.[CanDelete] AS TINYINT))
+                AS BIT
+            ) AS [RoleCanDelete],
+
+            CAST
+            (
+                MAX(CAST(RP.[CanRead] AS TINYINT))
+                AS BIT
+            ) AS [RoleCanRead],
+
+            CAST
+            (
+                MAX(CAST(RP.[CanApprove] AS TINYINT))
+                AS BIT
+            ) AS [RoleCanApprove]
+
+        FROM [dbo].[OrganizationUsers] OU
+
+        INNER JOIN [dbo].[UserRoles] UR
+            ON UR.[OrganizationUserId] = OU.[Id]
+
+        INNER JOIN [dbo].[Roles] R
+            ON R.[Id] = UR.[RoleId]
+           AND R.[OrganizationId] = OU.[OrganizationId]
+
+        INNER JOIN [dbo].[RolePermissions] RP
+            ON RP.[RoleId] = R.[Id]
+
+        WHERE OU.[IdentityUserId] = @IdentityUserId
+
+          AND OU.[IsActive] = 1
+          AND OU.[IsApproved] = 1
+
+          AND R.[IsActive] = 1
+          AND R.[IsDeleted] = 0
+          AND R.[IsApproved] = 1
+
+        GROUP BY
+            OU.[OrganizationId],
+            OU.[Id],
+            RP.[ModuleId]
+    )
+
+    ------------------------------------------------------------
+    -- Final effective module permission matrix
+    ------------------------------------------------------------
+
     SELECT
-        ou.OrganizationId,
-        ou.Id AS OrganizationUserId,
+        OU.[OrganizationId],
+        OU.[Id] AS [OrganizationUserId],
 
-        m.Id AS ModuleId,
-        m.Code AS ModuleCode,
-        m.Name AS ModuleName,
-        m.Description,
-        m.Route,
-        m.IconKey,
-        m.MenuGroup,
-        m.DisplayOrder,
-        m.ShowInMenu,
+        M.[Id] AS [ModuleId],
+        M.[Code] AS [ModuleCode],
+        M.[Name] AS [ModuleName],
+        M.[Description],
+        M.[Route],
+        M.[IconKey],
+        M.[MenuGroup],
+        M.[DisplayOrder],
+        M.[ShowInMenu],
 
-        CAST(MAX(
+        --------------------------------------------------------
+        -- Effective Create
+        --------------------------------------------------------
+
+        CAST
+        (
             CASE
-                WHEN lm.DefaultCanCreate = 1
-                 AND rp.CanCreate = 1
-                THEN 1 ELSE 0
+                WHEN E.[AllowedCanCreate] = 1
+                 AND M.[SupportsCreate] = 1
+                 AND ISNULL(URP.[RoleCanCreate], 0) = 1
+                THEN 1
+                ELSE 0
             END
-        ) AS bit) AS CanCreate,
+            AS BIT
+        ) AS [CanCreate],
 
-        CAST(MAX(
+        --------------------------------------------------------
+        -- Effective Update
+        --------------------------------------------------------
+
+        CAST
+        (
             CASE
-                WHEN lm.DefaultCanUpdate = 1
-                 AND rp.CanUpdate = 1
-                THEN 1 ELSE 0
+                WHEN E.[AllowedCanUpdate] = 1
+                 AND M.[SupportsUpdate] = 1
+                 AND ISNULL(URP.[RoleCanUpdate], 0) = 1
+                THEN 1
+                ELSE 0
             END
-        ) AS bit) AS CanUpdate,
+            AS BIT
+        ) AS [CanUpdate],
 
-        CAST(MAX(
+        --------------------------------------------------------
+        -- Effective Delete
+        --------------------------------------------------------
+
+        CAST
+        (
             CASE
-                WHEN lm.DefaultCanDelete = 1
-                 AND rp.CanDelete = 1
-                THEN 1 ELSE 0
+                WHEN E.[AllowedCanDelete] = 1
+                 AND M.[SupportsDelete] = 1
+                 AND ISNULL(URP.[RoleCanDelete], 0) = 1
+                THEN 1
+                ELSE 0
             END
-        ) AS bit) AS CanDelete,
+            AS BIT
+        ) AS [CanDelete],
 
-        CAST(MAX(
+        --------------------------------------------------------
+        -- Effective Read
+        --------------------------------------------------------
+
+        CAST
+        (
             CASE
-                WHEN lm.DefaultCanRead = 1
-                 AND rp.CanRead = 1
-                THEN 1 ELSE 0
+                WHEN E.[AllowedCanRead] = 1
+                 AND M.[SupportsRead] = 1
+                 AND ISNULL(URP.[RoleCanRead], 0) = 1
+                THEN 1
+                ELSE 0
             END
-        ) AS bit) AS CanRead
+            AS BIT
+        ) AS [CanRead],
 
-    FROM dbo.OrganizationUsers ou
+        --------------------------------------------------------
+        -- Effective Approve
+        --
+        -- Approval is a cross-license capability.
+        -- It is not derived from LicenseModules.
+        --
+        -- It requires:
+        --
+        --   business module entitlement
+        --       +
+        --   SupportsApprove
+        --       +
+        --   WORKFLOW / APPROVALS
+        --       +
+        --   role CanApprove
+        --------------------------------------------------------
 
-    INNER JOIN dbo.UserRoles ur
-        ON ur.OrganizationUserId = ou.Id
+        CAST
+        (
+            CASE
+                WHEN M.[SupportsApprove] = 1
+                 AND AF.[OrganizationId] IS NOT NULL
+                 AND ISNULL(URP.[RoleCanApprove], 0) = 1
+                THEN 1
+                ELSE 0
+            END
+            AS BIT
+        ) AS [CanApprove]
 
-    INNER JOIN dbo.Roles r
-        ON r.Id = ur.RoleId
-        AND r.OrganizationId = ou.OrganizationId
-        AND r.IsActive = 1
-        AND r.IsDeleted = 0
+    FROM [dbo].[OrganizationUsers] OU
 
-    INNER JOIN dbo.RolePermissions rp
-        ON rp.RoleId = r.Id
+    INNER JOIN EntitledModules E
+        ON E.[OrganizationId] = OU.[OrganizationId]
 
-    INNER JOIN dbo.Modules m
-        ON m.Id = rp.ModuleId
-        AND m.IsActive = 1
+    INNER JOIN [dbo].[Modules] M
+        ON M.[Id] = E.[ModuleId]
+       AND M.[IsActive] = 1
 
-    INNER JOIN dbo.OrganizationLicenses ol
-        ON ol.OrganizationId = ou.OrganizationId
-        AND ol.IsActive = 1
-        AND ol.StartUtc <= SYSUTCDATETIME()
-        AND (
-            ol.EndUtc IS NULL
-            OR ol.EndUtc > SYSUTCDATETIME()
-        )
+    LEFT JOIN UserRolePermissions URP
+        ON URP.[OrganizationId] = OU.[OrganizationId]
+       AND URP.[OrganizationUserId] = OU.[Id]
+       AND URP.[ModuleId] = M.[Id]
 
-    INNER JOIN dbo.Licenses l
-        ON l.Id = ol.LicenseId
-        AND l.IsActive = 1
+    LEFT JOIN ApprovalFeatures AF
+        ON AF.[OrganizationId] = OU.[OrganizationId]
 
-    INNER JOIN dbo.LicenseModules lm
-        ON lm.LicenseId = l.Id
-        AND lm.ModuleId = m.Id
-
-    WHERE
-        ou.IdentityUserId = @IdentityUserId
-        AND ou.IsActive = 1
-        AND ou.IsApproved = 1
-
-    GROUP BY
-        ou.OrganizationId,
-        ou.Id,
-        m.Id,
-        m.Code,
-        m.Name,
-        m.Description,
-        m.Route,
-        m.IconKey,
-        m.MenuGroup,
-        m.DisplayOrder,
-        m.ShowInMenu
+    WHERE OU.[IdentityUserId] = @IdentityUserId
+      AND OU.[IsActive] = 1
+      AND OU.[IsApproved] = 1
 
     ORDER BY
-        m.DisplayOrder,
-        m.Name;
+        M.[DisplayOrder],
+        M.[Name];
 END;
 GO

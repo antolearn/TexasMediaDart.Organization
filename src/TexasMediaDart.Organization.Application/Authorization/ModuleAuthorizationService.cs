@@ -66,6 +66,19 @@ public sealed class ModuleAuthorizationService
         return module?.CanDelete == true;
     }
 
+    public async Task<bool> CanApproveAsync(
+        Guid identityUserId,
+        string moduleCode,
+        CancellationToken cancellationToken = default)
+    {
+        var module = await GetModuleAsync(
+            identityUserId,
+            moduleCode,
+            cancellationToken);
+
+        return module?.CanApprove == true;
+    }
+
     private async Task<UserModulePermissionDto?> GetModuleAsync(
         Guid identityUserId,
         string moduleCode,

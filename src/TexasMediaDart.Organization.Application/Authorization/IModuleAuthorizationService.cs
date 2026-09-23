@@ -21,4 +21,9 @@ public interface IModuleAuthorizationService
         Guid identityUserId,
         string moduleCode,
         CancellationToken cancellationToken = default);
+
+    Task<bool> CanApproveAsync(
+        Guid identityUserId,
+        string moduleCode,
+        CancellationToken cancellationToken = default);
 }

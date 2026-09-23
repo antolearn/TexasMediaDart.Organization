@@ -19,6 +19,10 @@ CREATE TABLE [dbo].[RolePermissions]
         CONSTRAINT [DF_RolePermissions_CanRead]
         DEFAULT (0),
 
+    [CanApprove] BIT NOT NULL
+        CONSTRAINT [DF_RolePermissions_CanApprove]
+        DEFAULT (0),
+
     [CreatedBy]  NVARCHAR(100) NOT NULL,
 
     [CreatedUtc] DATETIME2(7) NOT NULL

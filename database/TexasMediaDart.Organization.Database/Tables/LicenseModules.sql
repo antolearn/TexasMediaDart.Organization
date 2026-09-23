@@ -3,6 +3,15 @@ CREATE TABLE [dbo].[LicenseModules]
     [LicenseId] INT NOT NULL,
     [ModuleId]  INT NOT NULL,
 
+    ------------------------------------------------------------
+    -- Default permissions
+    --
+    -- These values define the default permissions provisioned
+    -- when a license/module entitlement is initialized.
+    --
+    -- They do NOT directly grant permissions to a user.
+    ------------------------------------------------------------
+
     [DefaultCanCreate] BIT NOT NULL
         CONSTRAINT [DF_LicenseModules_DefaultCanCreate]
         DEFAULT (0),
@@ -18,6 +27,10 @@ CREATE TABLE [dbo].[LicenseModules]
     [DefaultCanRead] BIT NOT NULL
         CONSTRAINT [DF_LicenseModules_DefaultCanRead]
         DEFAULT (0),
+
+    ------------------------------------------------------------
+    -- Keys / Constraints
+    ------------------------------------------------------------
 
     CONSTRAINT [PK_LicenseModules]
         PRIMARY KEY CLUSTERED

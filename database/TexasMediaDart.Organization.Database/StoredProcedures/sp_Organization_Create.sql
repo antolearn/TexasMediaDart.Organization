@@ -249,6 +249,23 @@ BEGIN
 
         ---------------------------------------------------------------------
         -- Seed Owner permissions from CORE license entitlement
+        --
+        -- CRUD/read permissions are initialized from LicenseModules.
+        --
+        -- Approval is intentionally initialized to 0 because a newly
+        -- created organization receives only the CORE license.
+        --
+        -- Approval requires:
+        --
+        --   Module.SupportsApprove = 1
+        --       +
+        --   active WORKFLOW / APPROVALS entitlement
+        --       +
+        --   RolePermissions.CanApprove = 1
+        --
+        -- When WORKFLOW or another license is assigned later, the
+        -- license-assignment process is responsible for expanding the
+        -- Owner role permissions for newly entitled modules/actions.
         ---------------------------------------------------------------------
 
         INSERT INTO [dbo].[RolePermissions]
@@ -259,26 +276,32 @@ BEGIN
             [CanUpdate],
             [CanDelete],
             [CanRead],
+            [CanApprove],
             [CreatedBy],
             [CreatedUtc]
         )
         SELECT
             @OwnerRoleId,
-            [ModuleId],
-            [DefaultCanCreate],
-            [DefaultCanUpdate],
-            [DefaultCanDelete],
-            [DefaultCanRead],
+            LM.[ModuleId],
+            LM.[DefaultCanCreate],
+            LM.[DefaultCanUpdate],
+            LM.[DefaultCanDelete],
+            LM.[DefaultCanRead],
+
+            -- CORE does not enable approval functionality.
+            CAST(0 AS BIT) AS [CanApprove],
+
             @AuditEmail,
             @NowUtc
-        FROM [dbo].[LicenseModules]
-        WHERE [LicenseId] = @CoreLicenseId
-          AND [ModuleId] IN
-          (
-              SELECT [Id]
-              FROM [dbo].[Modules]
-              WHERE [IsActive] = 1
-          );
+
+        FROM [dbo].[LicenseModules] LM
+
+        INNER JOIN [dbo].[Modules] M
+            ON M.[Id] = LM.[ModuleId]
+
+        WHERE LM.[LicenseId] = @CoreLicenseId
+          AND M.[IsActive] = 1;
+
         ---------------------------------------------------------------------
         -- Assign Owner role to organization creator
         ---------------------------------------------------------------------
@@ -342,6 +365,7 @@ BEGIN
 
         IF ERROR_NUMBER() IN (2601, 2627)
         BEGIN
+
             IF EXISTS
             (
                 SELECT 1
