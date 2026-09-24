@@ -7,6 +7,9 @@ CREATE PROCEDURE [dbo].[sp_Role_Search]
     @IsApproved BIT = NULL,
     @IncludeDeleted BIT = 0,
 
+    @SortBy NVARCHAR(50) = NULL,
+    @SortDirection NVARCHAR(4) = NULL,
+
     @PageNumber INT = 1,
     @PageSize INT = 25
 AS
@@ -38,6 +41,57 @@ BEGIN
 
     SET @SearchText =
         NULLIF(LTRIM(RTRIM(@SearchText)), '');
+
+    ------------------------------------------------------------
+    -- Normalize sorting input
+    ------------------------------------------------------------
+
+    SET @SortBy =
+        LOWER(NULLIF(LTRIM(RTRIM(@SortBy)), ''));
+
+    SET @SortDirection =
+        LOWER(NULLIF(LTRIM(RTRIM(@SortDirection)), ''));
+
+    ------------------------------------------------------------
+    -- Validate sorting input
+    ------------------------------------------------------------
+
+    IF @SortBy IS NOT NULL
+       AND @SortBy NOT IN ('name', 'description', 'createdutc')
+    BEGIN
+        THROW 54204, 'SortBy must be name, description, or createdUtc.', 1;
+    END;
+
+    IF @SortDirection IS NOT NULL
+       AND @SortDirection NOT IN ('asc', 'desc')
+    BEGIN
+        THROW 54205, 'SortDirection must be asc or desc.', 1;
+    END;
+
+    ------------------------------------------------------------
+    -- Sorting defaults
+    --
+    -- No SortBy:
+    --   Preserve existing default ordering.
+    --
+    -- SortBy supplied without direction:
+    --   ASC for Name / Description
+    --   DESC for CreatedUtc
+    ------------------------------------------------------------
+
+    IF @SortBy IS NOT NULL
+       AND @SortDirection IS NULL
+    BEGIN
+        SET @SortDirection =
+            CASE
+                WHEN @SortBy = 'createdutc' THEN 'desc'
+                ELSE 'asc'
+            END;
+    END;
+
+    ------------------------------------------------------------
+    -- Pagination
+    ------------------------------------------------------------
 
     DECLARE @Offset INT =
         (@PageNumber - 1) * @PageSize;
@@ -71,11 +125,12 @@ BEGIN
     FROM [dbo].[Roles] R
 
     WHERE R.[OrganizationId] = @OrganizationId
+
       AND
-    (
-        @IncludeDeleted = 1
-        OR R.[IsDeleted] = 0
-    )
+      (
+          @IncludeDeleted = 1
+          OR R.[IsDeleted] = 0
+      )
 
       AND
       (
@@ -103,9 +158,75 @@ BEGIN
       )
 
     ORDER BY
-        R.[IsSystemRole] DESC,
-        R.[Name],
-        R.[Id]
+
+        --------------------------------------------------------
+        -- Name
+        --------------------------------------------------------
+
+        CASE
+            WHEN @SortBy = 'name'
+             AND @SortDirection = 'asc'
+            THEN R.[Name]
+        END ASC,
+
+        CASE
+            WHEN @SortBy = 'name'
+             AND @SortDirection = 'desc'
+            THEN R.[Name]
+        END DESC,
+
+        --------------------------------------------------------
+        -- Description
+        --------------------------------------------------------
+
+        CASE
+            WHEN @SortBy = 'description'
+             AND @SortDirection = 'asc'
+            THEN R.[Description]
+        END ASC,
+
+        CASE
+            WHEN @SortBy = 'description'
+             AND @SortDirection = 'desc'
+            THEN R.[Description]
+        END DESC,
+
+        --------------------------------------------------------
+        -- CreatedUtc
+        --------------------------------------------------------
+
+        CASE
+            WHEN @SortBy = 'createdutc'
+             AND @SortDirection = 'asc'
+            THEN R.[CreatedUtc]
+        END ASC,
+
+        CASE
+            WHEN @SortBy = 'createdutc'
+             AND @SortDirection = 'desc'
+            THEN R.[CreatedUtc]
+        END DESC,
+
+        --------------------------------------------------------
+        -- Existing default ordering.
+        -- Used only when SortBy is not supplied.
+        --------------------------------------------------------
+
+        CASE
+            WHEN @SortBy IS NULL
+            THEN R.[IsSystemRole]
+        END DESC,
+
+        CASE
+            WHEN @SortBy IS NULL
+            THEN R.[Name]
+        END ASC,
+
+        --------------------------------------------------------
+        -- Deterministic tie-breaker for pagination
+        --------------------------------------------------------
+
+        R.[Id] ASC
 
     OFFSET @Offset ROWS
     FETCH NEXT @PageSize ROWS ONLY;
@@ -122,11 +243,11 @@ BEGIN
 
     WHERE R.[OrganizationId] = @OrganizationId
 
-    AND
-    (
-        @IncludeDeleted = 1
-        OR R.[IsDeleted] = 0
-    )
+      AND
+      (
+          @IncludeDeleted = 1
+          OR R.[IsDeleted] = 0
+      )
 
       AND
       (
