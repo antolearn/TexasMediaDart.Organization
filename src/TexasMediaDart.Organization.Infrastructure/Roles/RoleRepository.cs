@@ -27,6 +27,8 @@ public sealed class RoleRepository : IRoleRepository
         bool? isActive,
         bool? isApproved,
         bool includeDeleted,
+        string? sortBy,
+        string? sortDirection,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default)
@@ -37,16 +39,18 @@ public sealed class RoleRepository : IRoleRepository
         var command = new CommandDefinition(
             commandText: "[dbo].[sp_Role_Search]",
             parameters: new
-            {
-                OrganizationId = organizationId,
-                SearchText = searchText,
-                IsSystemRole = isSystemRole,
-                IsActive = isActive,
-                IsApproved = isApproved,
-                IncludeDeleted = includeDeleted,
-                PageNumber = pageNumber,
-                PageSize = pageSize
-            },
+                {
+                    OrganizationId = organizationId,
+                    SearchText = searchText,
+                    IsSystemRole = isSystemRole,
+                    IsActive = isActive,
+                    IsApproved = isApproved,
+                    IncludeDeleted = includeDeleted,
+                    SortBy = sortBy,
+                    SortDirection = sortDirection,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize
+                },
             commandType: CommandType.StoredProcedure,
             cancellationToken: cancellationToken);
 

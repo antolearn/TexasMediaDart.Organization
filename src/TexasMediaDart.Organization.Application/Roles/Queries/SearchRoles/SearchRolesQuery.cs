@@ -10,6 +10,8 @@ public sealed record SearchRolesQuery(
     bool? IsActive,
     bool? IsApproved,
     bool IncludeDeleted,
+    string? SortBy,
+    string? SortDirection,
     int PageNumber,
     int PageSize)
     : IQuery<RoleSearchResultDto>;

@@ -11,6 +11,8 @@ public interface IRoleRepository
         bool? isActive,
         bool? isApproved,
         bool includeDeleted,
+        string? sortBy,
+        string? sortDirection,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default);

@@ -7,6 +7,14 @@ namespace TexasMediaDart.Organization.Application.Roles.Queries.SearchRoles;
 public sealed class SearchRolesQueryHandler
     : IQueryHandler<SearchRolesQuery, RoleSearchResultDto>
 {
+    private static readonly HashSet<string> AllowedSortFields =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "name",
+            "description",
+            "createdUtc"
+        };
+
     private readonly IRoleRepository _roleRepository;
 
     public SearchRolesQueryHandler(
@@ -31,6 +39,49 @@ public sealed class SearchRolesQueryHandler
                 ? null
                 : query.SearchText.Trim();
 
+        var sortBy =
+            string.IsNullOrWhiteSpace(query.SortBy)
+                ? null
+                : query.SortBy.Trim();
+
+        var sortDirection =
+            string.IsNullOrWhiteSpace(query.SortDirection)
+                ? null
+                : query.SortDirection.Trim().ToLowerInvariant();
+
+        if (sortBy is not null &&
+            !AllowedSortFields.Contains(sortBy))
+        {
+            throw new ArgumentException(
+                "SortBy must be name, description, or createdUtc.",
+                nameof(query.SortBy));
+        }
+
+        if (sortDirection is not null &&
+            sortDirection is not ("asc" or "desc"))
+        {
+            throw new ArgumentException(
+                "SortDirection must be asc or desc.",
+                nameof(query.SortDirection));
+        }
+
+        if (sortBy is null && sortDirection is not null)
+        {
+            throw new ArgumentException(
+                "SortBy is required when SortDirection is provided.",
+                nameof(query.SortBy));
+        }
+
+        if (sortBy is not null && sortDirection is null)
+        {
+            sortDirection =
+                sortBy.Equals(
+                    "createdUtc",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? "desc"
+                    : "asc";
+        }
+
         var pageNumber =
             query.PageNumber < 1
                 ? 1
@@ -51,6 +102,8 @@ public sealed class SearchRolesQueryHandler
             query.IsActive,
             query.IsApproved,
             query.IncludeDeleted,
+            sortBy,
+            sortDirection,
             pageNumber,
             pageSize,
             cancellationToken);
