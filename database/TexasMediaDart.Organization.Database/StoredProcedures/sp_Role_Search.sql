@@ -5,6 +5,7 @@ CREATE PROCEDURE [dbo].[sp_Role_Search]
     @IsSystemRole BIT = NULL,
     @IsActive BIT = NULL,
     @IsApproved BIT = NULL,
+    @IncludeDeleted BIT = 0,
 
     @PageNumber INT = 1,
     @PageSize INT = 25
@@ -70,7 +71,11 @@ BEGIN
     FROM [dbo].[Roles] R
 
     WHERE R.[OrganizationId] = @OrganizationId
-      AND R.[IsDeleted] = 0
+      AND
+    (
+        @IncludeDeleted = 1
+        OR R.[IsDeleted] = 0
+    )
 
       AND
       (
@@ -116,7 +121,12 @@ BEGIN
     FROM [dbo].[Roles] R
 
     WHERE R.[OrganizationId] = @OrganizationId
-      AND R.[IsDeleted] = 0
+
+    AND
+    (
+        @IncludeDeleted = 1
+        OR R.[IsDeleted] = 0
+    )
 
       AND
       (

@@ -112,6 +112,7 @@ public sealed class RolesController : ControllerBase
         [FromQuery] bool? isSystemRole = null,
         [FromQuery] bool? isActive = null,
         [FromQuery] bool? isApproved = null,
+        [FromQuery] bool includeDeleted = false,
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 25,
         CancellationToken cancellationToken = default)
@@ -152,6 +153,7 @@ public sealed class RolesController : ControllerBase
             isSystemRole,
             isActive,
             isApproved,
+            includeDeleted,
             pageNumber,
             pageSize);
 

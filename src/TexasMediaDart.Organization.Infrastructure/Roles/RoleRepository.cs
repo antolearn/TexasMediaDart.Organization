@@ -26,6 +26,7 @@ public sealed class RoleRepository : IRoleRepository
         bool? isSystemRole,
         bool? isActive,
         bool? isApproved,
+        bool includeDeleted,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default)
@@ -42,6 +43,7 @@ public sealed class RoleRepository : IRoleRepository
                 IsSystemRole = isSystemRole,
                 IsActive = isActive,
                 IsApproved = isApproved,
+                IncludeDeleted = includeDeleted,
                 PageNumber = pageNumber,
                 PageSize = pageSize
             },
@@ -66,7 +68,6 @@ public sealed class RoleRepository : IRoleRepository
             PageSize = pageSize
         };
     }
-
     public async Task<RoleDto?> GetByIdAsync(
         Guid roleId,
         Guid organizationId,

@@ -50,6 +50,7 @@ public sealed class SearchRolesQueryHandler
             query.IsSystemRole,
             query.IsActive,
             query.IsApproved,
+            query.IncludeDeleted,
             pageNumber,
             pageSize,
             cancellationToken);
