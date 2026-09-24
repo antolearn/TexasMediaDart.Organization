@@ -10,6 +10,7 @@ public interface IRoleRepository
         bool? isSystemRole,
         bool? isActive,
         bool? isApproved,
+        bool includeDeleted,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default);
