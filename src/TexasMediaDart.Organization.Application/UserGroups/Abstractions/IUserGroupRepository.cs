@@ -9,6 +9,7 @@ public interface IUserGroupRepository
         string? searchText,
         bool? isActive,
         bool? isApproved,
+        bool includeDeleted,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default);

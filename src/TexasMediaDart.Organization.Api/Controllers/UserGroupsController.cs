@@ -111,6 +111,7 @@ public sealed class UserGroupsController : ControllerBase
         [FromQuery] string? searchText,
         [FromQuery] bool? isActive,
         [FromQuery] bool? isApproved,
+        [FromQuery] bool includeDeleted = false,
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 25,
         CancellationToken cancellationToken = default)
@@ -151,6 +152,7 @@ public sealed class UserGroupsController : ControllerBase
                 searchText,
                 isActive,
                 isApproved,
+                includeDeleted,
                 pageNumber,
                 pageSize);
 

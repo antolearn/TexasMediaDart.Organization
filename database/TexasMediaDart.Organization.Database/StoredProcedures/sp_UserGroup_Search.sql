@@ -3,6 +3,7 @@ CREATE PROCEDURE [dbo].[sp_UserGroup_Search]
     @SearchText NVARCHAR(100) = NULL,
     @IsActive BIT = NULL,
     @IsApproved BIT = NULL,
+    @IncludeDeleted BIT = 0,
     @PageNumber INT = 1,
     @PageSize INT = 25
 AS
@@ -39,7 +40,11 @@ BEGIN
         [ApprovedUtc]
     FROM [dbo].[UserGroups]
     WHERE [OrganizationId] = @OrganizationId
-      AND [IsDeleted] = 0
+      AND
+      (
+          @IncludeDeleted = 1
+          OR [IsDeleted] = 0
+      )
       AND
       (
           @SearchText IS NULL
@@ -66,7 +71,11 @@ BEGIN
         COUNT_BIG(1) AS [TotalCount]
     FROM [dbo].[UserGroups]
     WHERE [OrganizationId] = @OrganizationId
-      AND [IsDeleted] = 0
+      AND
+      (
+          @IncludeDeleted = 1
+          OR [IsDeleted] = 0
+      )
       AND
       (
           @SearchText IS NULL

@@ -49,6 +49,7 @@ public sealed class SearchUserGroupsQueryHandler
             searchText,
             query.IsActive,
             query.IsApproved,
+            query.IncludeDeleted,
             pageNumber,
             pageSize,
             cancellationToken);
