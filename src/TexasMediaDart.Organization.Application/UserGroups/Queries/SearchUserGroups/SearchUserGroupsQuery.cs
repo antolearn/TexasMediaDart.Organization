@@ -8,6 +8,7 @@ public sealed record SearchUserGroupsQuery(
     string? SearchText,
     bool? IsActive,
     bool? IsApproved,
+    bool IncludeDeleted,
     int PageNumber,
     int PageSize)
     : IQuery<UserGroupSearchResultDto>;
