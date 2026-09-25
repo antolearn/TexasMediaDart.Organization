@@ -28,6 +28,19 @@ using TexasMediaDart.Organization.Application.Roles.Commands.DeleteRole;
 using TexasMediaDart.Organization.Application.Roles.Queries.GetRolePermissions;
 using TexasMediaDart.Organization.Application.Roles.Commands.UpdateRolePermissions;
 
+using TexasMediaDart.Organization.Application.UserGroups.Abstractions;
+using TexasMediaDart.Organization.Infrastructure.UserGroups;
+using TexasMediaDart.Organization.Application.UserGroups.Models;
+using TexasMediaDart.Organization.Application.UserGroups.Queries.SearchUserGroups;
+using TexasMediaDart.Organization.Application.UserGroups.Queries.GetUserGroupById;
+using TexasMediaDart.Organization.Application.UserGroups.Commands.CreateUserGroup;
+using TexasMediaDart.Organization.Application.UserGroups.Commands.UpdateUserGroup;
+using TexasMediaDart.Organization.Application.UserGroups.Commands.DeleteUserGroup;
+
+using TexasMediaDart.Organization.Application.UserGroups.Commands.AddUserGroupMember;
+using TexasMediaDart.Organization.Application.UserGroups.Commands.RemoveUserGroupMember;
+using TexasMediaDart.Organization.Application.UserGroups.Queries.SearchUserGroupMembers;
+
 
 namespace TexasMediaDart.Organization.Api.Extensions;
 
@@ -51,6 +64,10 @@ public static class DependencyInjection
         services.AddScoped<
             IRoleRepository,
             RoleRepository>();
+
+        services.AddScoped<
+            IUserGroupRepository,
+            UserGroupRepository>();
 
         //------------------------------------------------------
         // Authorization
@@ -127,6 +144,56 @@ public static class DependencyInjection
                 GetRolePermissionsQuery,
                 IReadOnlyList<RolePermissionDto>>,
             GetRolePermissionsQueryHandler>();
+
+        //------------------------------------------------------
+        // User Group Queries
+        //------------------------------------------------------
+
+        services.AddScoped<
+            IQueryHandler<
+                SearchUserGroupsQuery,
+                UserGroupSearchResultDto>,
+            SearchUserGroupsQueryHandler>();
+
+        services.AddScoped<
+            IQueryHandler<
+                GetUserGroupByIdQuery,
+                UserGroupDto?>,
+            GetUserGroupByIdQueryHandler>();
+
+        //------------------------------------------------------
+        // User Group Commands
+        //------------------------------------------------------
+
+        services.AddScoped<
+            ICommandHandler<
+                CreateUserGroupCommand,
+                UserGroupDto>,
+            CreateUserGroupCommandHandler>();
+
+        services.AddScoped<
+            ICommandHandler<
+                UpdateUserGroupCommand,
+                UserGroupDto>,
+            UpdateUserGroupCommandHandler>();
+
+        services.AddScoped<
+            ICommandHandler<
+                DeleteUserGroupCommand,
+                UserGroupDto>,
+            DeleteUserGroupCommandHandler>();
+
+        services.AddScoped<
+            IQueryHandler<SearchUserGroupMembersQuery, UserGroupMemberSearchResultDto>,
+            SearchUserGroupMembersQueryHandler>();
+
+        services.AddScoped<
+            ICommandHandler<AddUserGroupMemberCommand, UserGroupMemberCreatedDto>,
+            AddUserGroupMemberCommandHandler>();
+
+        services.AddScoped<
+            ICommandHandler<RemoveUserGroupMemberCommand, bool>,
+            RemoveUserGroupMemberCommandHandler>();
         //------------------------------------------------------
         // Role Commands
         //------------------------------------------------------
