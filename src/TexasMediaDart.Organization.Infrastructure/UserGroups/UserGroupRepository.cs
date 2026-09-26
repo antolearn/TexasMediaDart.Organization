@@ -26,6 +26,8 @@ public sealed class UserGroupRepository : IUserGroupRepository
         bool? isActive,
         bool? isApproved,
         bool includeDeleted,
+        string? sortBy,
+        string? sortDirection,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default)
@@ -42,6 +44,8 @@ public sealed class UserGroupRepository : IUserGroupRepository
                 IsActive = isActive,
                 IsApproved = isApproved,
                 IncludeDeleted = includeDeleted,
+                SortBy = sortBy,
+                SortDirection = sortDirection,
                 PageNumber = pageNumber,
                 PageSize = pageSize
             },
