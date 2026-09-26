@@ -9,6 +9,8 @@ public sealed record SearchUserGroupsQuery(
     bool? IsActive,
     bool? IsApproved,
     bool IncludeDeleted,
+    string? SortBy,
+    string? SortDirection,
     int PageNumber,
     int PageSize)
     : IQuery<UserGroupSearchResultDto>;

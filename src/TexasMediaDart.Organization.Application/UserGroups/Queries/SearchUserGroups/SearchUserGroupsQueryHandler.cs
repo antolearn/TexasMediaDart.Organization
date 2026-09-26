@@ -7,6 +7,14 @@ namespace TexasMediaDart.Organization.Application.UserGroups.Queries.SearchUserG
 public sealed class SearchUserGroupsQueryHandler
     : IQueryHandler<SearchUserGroupsQuery, UserGroupSearchResultDto>
 {
+    private static readonly HashSet<string> AllowedSortFields =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "name",
+            "description",
+            "createdUtc"
+        };
+
     private readonly IUserGroupRepository _userGroupRepository;
 
     public SearchUserGroupsQueryHandler(
@@ -31,6 +39,49 @@ public sealed class SearchUserGroupsQueryHandler
                 ? null
                 : query.SearchText.Trim();
 
+        var sortBy =
+            string.IsNullOrWhiteSpace(query.SortBy)
+                ? null
+                : query.SortBy.Trim();
+
+        var sortDirection =
+            string.IsNullOrWhiteSpace(query.SortDirection)
+                ? null
+                : query.SortDirection.Trim().ToLowerInvariant();
+
+        if (sortBy is not null &&
+            !AllowedSortFields.Contains(sortBy))
+        {
+            throw new ArgumentException(
+                "SortBy must be name, description, or createdUtc.",
+                nameof(query.SortBy));
+        }
+
+        if (sortDirection is not null &&
+            sortDirection is not ("asc" or "desc"))
+        {
+            throw new ArgumentException(
+                "SortDirection must be asc or desc.",
+                nameof(query.SortDirection));
+        }
+
+        if (sortBy is null && sortDirection is not null)
+        {
+            throw new ArgumentException(
+                "SortBy is required when SortDirection is provided.",
+                nameof(query.SortBy));
+        }
+
+        if (sortBy is not null && sortDirection is null)
+        {
+            sortDirection =
+                sortBy.Equals(
+                    "createdUtc",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? "desc"
+                    : "asc";
+        }
+
         var pageNumber =
             query.PageNumber < 1
                 ? 1
@@ -50,6 +101,8 @@ public sealed class SearchUserGroupsQueryHandler
             query.IsActive,
             query.IsApproved,
             query.IncludeDeleted,
+            sortBy,
+            sortDirection,
             pageNumber,
             pageSize,
             cancellationToken);
