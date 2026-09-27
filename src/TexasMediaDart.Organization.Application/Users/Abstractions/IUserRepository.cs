@@ -22,4 +22,10 @@ public interface IUserRepository
         bool? isActive,
         bool? isApproved,
         CancellationToken cancellationToken = default);
+
+    Task<OrganizationUserDto> CreateAsync(
+        Guid organizationId,
+        Guid identityUserId,
+        string createdBy,
+        CancellationToken cancellationToken = default);
 }

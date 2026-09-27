@@ -4,6 +4,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using TexasMediaDart.Organization.Application.Users.Abstractions;
 using TexasMediaDart.Organization.Application.Users.Models;
+using TexasMediaDart.Organization.Application.Common.Exceptions;
 
 namespace TexasMediaDart.Organization.Infrastructure.Users;
 
@@ -19,6 +20,47 @@ public sealed class UserRepository : IUserRepository
                 "Connection string 'DefaultConnection' is not configured.");
     }
 
+    public async Task<OrganizationUserDto> CreateAsync(
+    Guid organizationId,
+    Guid identityUserId,
+    string createdBy,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection =
+            new SqlConnection(_connectionString);
+
+        var command = new CommandDefinition(
+            commandText: "[dbo].[sp_OrganizationUser_Create]",
+            parameters: new
+            {
+                OrganizationId = organizationId,
+                IdentityUserId = identityUserId,
+                CreatedBy = createdBy
+            },
+            commandType: CommandType.StoredProcedure,
+            cancellationToken: cancellationToken);
+
+        try
+        {
+            return await connection.QuerySingleAsync<OrganizationUserDto>(
+                command);
+        }
+        catch (SqlException ex) when (
+            ex.Number is 53001 or 53002 or 53003)
+        {
+            throw new ValidationException(ex.Message);
+        }
+        catch (SqlException ex) when (ex.Number == 53004)
+        {
+            throw new NotFoundException(
+                "The organization does not exist or is inactive.");
+        }
+        catch (SqlException ex) when (ex.Number == 53005)
+        {
+            throw new ConflictException(
+                "The identity user already belongs to an organization.");
+        }
+    }
     public async Task<OrganizationUserSearchResultDto> SearchAsync(
         Guid organizationId,
         Guid? identityUserId,
