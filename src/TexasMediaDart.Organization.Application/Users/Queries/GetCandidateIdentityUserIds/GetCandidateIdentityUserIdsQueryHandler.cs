@@ -1,17 +1,18 @@
 using TexasMediaDart.Organization.Application.Common.CQRS;
 using TexasMediaDart.Organization.Application.Organizations.Abstractions;
 using TexasMediaDart.Organization.Application.Users.Abstractions;
-using TexasMediaDart.Organization.Application.Users.Models;
 
-namespace TexasMediaDart.Organization.Application.Users.Queries.SearchUsers;
+namespace TexasMediaDart.Organization.Application.Users.Queries.GetCandidateIdentityUserIds;
 
-public sealed class SearchUsersQueryHandler
-    : IQueryHandler<SearchUsersQuery, OrganizationUserSearchResultDto>
+public sealed class GetCandidateIdentityUserIdsQueryHandler
+    : IQueryHandler<
+        GetCandidateIdentityUserIdsQuery,
+        IReadOnlyList<Guid>>
 {
     private readonly IOrganizationRepository _organizationRepository;
     private readonly IUserRepository _userRepository;
 
-    public SearchUsersQueryHandler(
+    public GetCandidateIdentityUserIdsQueryHandler(
         IOrganizationRepository organizationRepository,
         IUserRepository userRepository)
     {
@@ -19,8 +20,8 @@ public sealed class SearchUsersQueryHandler
         _userRepository = userRepository;
     }
 
-    public async Task<OrganizationUserSearchResultDto> HandleAsync(
-        SearchUsersQuery query,
+    public async Task<IReadOnlyList<Guid>> HandleAsync(
+        GetCandidateIdentityUserIdsQuery query,
         CancellationToken cancellationToken = default)
     {
         var organization =
@@ -34,16 +35,11 @@ public sealed class SearchUsersQueryHandler
                 "The authenticated user does not belong to an organization.");
         }
 
-return await _userRepository.SearchAsync(
-    organization.OrganizationId,
-    query.FilterIdentityUserId,
-    query.IsActive,
-    query.IsApproved,
-    query.FilterByIdentityUserIds,
-    query.IdentityUserIds,
-    query.SortBy,
-    query.SortDirection,
-    query.PageNumber,
-    query.PageSize,
-    cancellationToken);
-}}
+        return await _userRepository.GetCandidateIdentityUserIdsAsync(
+            organization.OrganizationId,
+            query.FilterIdentityUserId,
+            query.IsActive,
+            query.IsApproved,
+            cancellationToken);
+    }
+}

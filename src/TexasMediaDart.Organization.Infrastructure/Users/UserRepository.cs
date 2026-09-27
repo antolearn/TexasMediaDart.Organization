@@ -24,24 +24,70 @@ public sealed class UserRepository : IUserRepository
         Guid? identityUserId,
         bool? isActive,
         bool? isApproved,
+        bool filterByIdentityUserIds,
+        IReadOnlyCollection<Guid> identityUserIds,
+        string sortBy,
+        string sortDirection,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default)
     {
+        var identityUserIdsTable = new DataTable();
+        identityUserIdsTable.Columns.Add("Id", typeof(Guid));
+
+        foreach (var id in identityUserIds.Distinct())
+        {
+            identityUserIdsTable.Rows.Add(id);
+        }
+
+        var parameters = new DynamicParameters();
+
+        parameters.Add(
+            "@OrganizationId",
+            organizationId);
+
+        parameters.Add(
+            "@IdentityUserId",
+            identityUserId);
+
+        parameters.Add(
+            "@IsActive",
+            isActive);
+
+        parameters.Add(
+            "@IsApproved",
+            isApproved);
+
+        parameters.Add(
+            "@FilterByIdentityUserIds",
+            filterByIdentityUserIds);
+
+        parameters.Add(
+            "@IdentityUserIds",
+            identityUserIdsTable.AsTableValuedParameter("dbo.GuidList"));
+
+        parameters.Add(
+            "@SortBy",
+            sortBy);
+
+        parameters.Add(
+            "@SortDirection",
+            sortDirection);
+
+        parameters.Add(
+            "@PageNumber",
+            pageNumber);
+
+        parameters.Add(
+            "@PageSize",
+            pageSize);
+
         await using var connection =
             new SqlConnection(_connectionString);
 
         var command = new CommandDefinition(
             commandText: "[dbo].[sp_OrganizationUser_Search]",
-            parameters: new
-            {
-                OrganizationId = organizationId,
-                IdentityUserId = identityUserId,
-                IsActive = isActive,
-                IsApproved = isApproved,
-                PageNumber = pageNumber,
-                PageSize = pageSize
-            },
+            parameters: parameters,
             commandType: CommandType.StoredProcedure,
             cancellationToken: cancellationToken);
 
@@ -62,5 +108,33 @@ public sealed class UserRepository : IUserRepository
             PageNumber = pageNumber,
             PageSize = pageSize
         };
+    }
+    public async Task<IReadOnlyList<Guid>> GetCandidateIdentityUserIdsAsync(
+        Guid organizationId,
+        Guid? identityUserId,
+        bool? isActive,
+        bool? isApproved,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection =
+            new SqlConnection(_connectionString);
+
+        var command = new CommandDefinition(
+            commandText:
+                "[dbo].[sp_OrganizationUser_GetCandidateIdentityUserIds]",
+            parameters: new
+            {
+                OrganizationId = organizationId,
+                IdentityUserId = identityUserId,
+                IsActive = isActive,
+                IsApproved = isApproved
+            },
+            commandType: CommandType.StoredProcedure,
+            cancellationToken: cancellationToken);
+
+        var identityUserIds =
+            await connection.QueryAsync<Guid>(command);
+
+        return identityUserIds.AsList();
     }
 }

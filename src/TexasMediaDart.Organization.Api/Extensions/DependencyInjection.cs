@@ -11,6 +11,7 @@ using TexasMediaDart.Organization.Application.Organizations.Queries.GetCurrentUs
 using TexasMediaDart.Organization.Application.Users.Abstractions;
 using TexasMediaDart.Organization.Application.Users.Models;
 using TexasMediaDart.Organization.Application.Users.Queries.SearchUsers;
+using TexasMediaDart.Organization.Application.Users.Queries.GetCandidateIdentityUserIds;
 
 using TexasMediaDart.Organization.Application.Roles.Abstractions;
 
@@ -122,6 +123,12 @@ public static class DependencyInjection
                 SearchUsersQuery,
                 OrganizationUserSearchResultDto>,
             SearchUsersQueryHandler>();
+
+        services.AddScoped<
+            IQueryHandler<
+                GetCandidateIdentityUserIdsQuery,
+                IReadOnlyList<Guid>>,
+            GetCandidateIdentityUserIdsQueryHandler>();
 
         //------------------------------------------------------
         // Role Queries

@@ -5,11 +5,24 @@ CREATE PROCEDURE [dbo].[sp_OrganizationUser_Search]
     @IsActive BIT = NULL,
     @IsApproved BIT = NULL,
 
+    @FilterByIdentityUserIds BIT = 0,
+    @IdentityUserIds [dbo].[GuidList] READONLY,
+
+    @SortBy NVARCHAR(50) = N'createdUtc',
+    @SortDirection NVARCHAR(4) = N'desc',
+
     @PageNumber INT = 1,
     @PageSize INT = 25
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    ------------------------------------------------------------
+    -- Normalize
+    ------------------------------------------------------------
+
+    SET @SortBy = LOWER(LTRIM(RTRIM(@SortBy)));
+    SET @SortDirection = LOWER(LTRIM(RTRIM(@SortDirection)));
 
     ------------------------------------------------------------
     -- Validation
@@ -28,6 +41,16 @@ BEGIN
     IF @PageSize < 1 OR @PageSize > 200
     BEGIN
         THROW 53203, 'PageSize must be between 1 and 200.', 1;
+    END;
+
+    IF @SortBy NOT IN (N'createdutc')
+    BEGIN
+        THROW 53204, 'SortBy must be createdUtc.', 1;
+    END;
+
+    IF @SortDirection NOT IN (N'asc', N'desc')
+    BEGIN
+        THROW 53205, 'SortDirection must be asc or desc.', 1;
     END;
 
     DECLARE @Offset INT =
@@ -77,9 +100,39 @@ BEGIN
           OR OU.[IsApproved] = @IsApproved
       )
 
+      AND
+      (
+          @FilterByIdentityUserIds = 0
+          OR EXISTS
+          (
+              SELECT 1
+              FROM @IdentityUserIds I
+              WHERE I.[Id] = OU.[IdentityUserId]
+          )
+      )
+
     ORDER BY
-        OU.[CreatedUtc] DESC,
-        OU.[Id] DESC
+        CASE
+            WHEN @SortBy = N'createdutc'
+             AND @SortDirection = N'asc'
+            THEN OU.[CreatedUtc]
+        END ASC,
+
+        CASE
+            WHEN @SortBy = N'createdutc'
+             AND @SortDirection = N'desc'
+            THEN OU.[CreatedUtc]
+        END DESC,
+
+        CASE
+            WHEN @SortDirection = N'asc'
+            THEN OU.[Id]
+        END ASC,
+
+        CASE
+            WHEN @SortDirection = N'desc'
+            THEN OU.[Id]
+        END DESC
 
     OFFSET @Offset ROWS
     FETCH NEXT @PageSize ROWS ONLY;
@@ -112,6 +165,17 @@ BEGIN
       (
           @IsApproved IS NULL
           OR OU.[IsApproved] = @IsApproved
+      )
+
+      AND
+      (
+          @FilterByIdentityUserIds = 0
+          OR EXISTS
+          (
+              SELECT 1
+              FROM @IdentityUserIds I
+              WHERE I.[Id] = OU.[IdentityUserId]
+          )
       );
 END;
 GO
