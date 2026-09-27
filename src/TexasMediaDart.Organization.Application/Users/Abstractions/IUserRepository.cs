@@ -9,7 +9,17 @@ public interface IUserRepository
         Guid? identityUserId,
         bool? isActive,
         bool? isApproved,
+        bool filterByIdentityUserIds,
+        IReadOnlyCollection<Guid> identityUserIds,
+        string sortBy,
+        string sortDirection,
         int pageNumber,
         int pageSize,
+        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Guid>> GetCandidateIdentityUserIdsAsync(
+        Guid organizationId,
+        Guid? identityUserId,
+        bool? isActive,
+        bool? isApproved,
         CancellationToken cancellationToken = default);
 }

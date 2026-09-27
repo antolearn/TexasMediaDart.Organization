@@ -8,6 +8,10 @@ public sealed record SearchUsersQuery(
     Guid? FilterIdentityUserId,
     bool? IsActive,
     bool? IsApproved,
+    bool FilterByIdentityUserIds,
+    IReadOnlyCollection<Guid> IdentityUserIds,
+    string SortBy,
+    string SortDirection,
     int PageNumber,
     int PageSize)
     : IQuery<OrganizationUserSearchResultDto>;
