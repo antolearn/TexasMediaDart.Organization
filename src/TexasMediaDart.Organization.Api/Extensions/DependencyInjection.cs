@@ -42,6 +42,8 @@ using TexasMediaDart.Organization.Application.UserGroups.Commands.AddUserGroupMe
 using TexasMediaDart.Organization.Application.UserGroups.Commands.RemoveUserGroupMember;
 using TexasMediaDart.Organization.Application.UserGroups.Queries.SearchUserGroupMembers;
 
+using TexasMediaDart.Organization.Application.Users.Commands.CreateUser;
+
 
 namespace TexasMediaDart.Organization.Api.Extensions;
 
@@ -113,6 +115,16 @@ public static class DependencyInjection
                 UpdateOrganizationCommand,
                 CurrentOrganizationDto>,
             UpdateOrganizationCommandHandler>();
+
+        //------------------------------------------------------
+        // User Commands
+        //------------------------------------------------------
+
+        services.AddScoped<
+            ICommandHandler<
+                CreateUserCommand,
+                OrganizationUserDto>,
+            CreateUserCommandHandler>();
 
         //------------------------------------------------------
         // User Queries

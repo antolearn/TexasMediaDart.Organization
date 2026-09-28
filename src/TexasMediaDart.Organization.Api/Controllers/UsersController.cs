@@ -7,6 +7,7 @@ using TexasMediaDart.Organization.Application.Users.Models;
 using TexasMediaDart.Organization.Application.Users.Queries.SearchUsers;
 using TexasMediaDart.Organization.Api.Models.Users;
 using TexasMediaDart.Organization.Application.Users.Queries.GetCandidateIdentityUserIds;
+using TexasMediaDart.Organization.Application.Users.Commands.CreateUser;
 
 namespace TexasMediaDart.Organization.Api.Controllers;
 
@@ -29,6 +30,10 @@ public sealed class UsersController : ControllerBase
 
     private readonly IModuleAuthorizationService _moduleAuthorizationService;
 
+    private readonly ICommandHandler<
+        CreateUserCommand,
+        OrganizationUserDto> _createUserHandler;
+
     public UsersController(
             IQueryHandler<
                 SearchUsersQuery,
@@ -37,14 +42,96 @@ public sealed class UsersController : ControllerBase
                 GetCandidateIdentityUserIdsQuery,
                 IReadOnlyList<Guid>> getCandidateIdentityUserIdsHandler,
             IModuleAuthorizationService moduleAuthorizationService,
-            IOrganizationAccessService organizationAccessService)
+            IOrganizationAccessService organizationAccessService,
+            ICommandHandler<
+                CreateUserCommand,
+                OrganizationUserDto> createUserHandler)
         {
             _searchUsersHandler = searchUsersHandler;
             _getCandidateIdentityUserIdsHandler =
                 getCandidateIdentityUserIdsHandler;
             _moduleAuthorizationService = moduleAuthorizationService;
             _organizationAccessService = organizationAccessService;
+            _createUserHandler = createUserHandler;
         }
+
+    [HttpPost]
+    [ProducesResponseType(
+        typeof(OrganizationUserDto),
+        StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OrganizationUserDto>> Create(
+        [FromBody] CreateUserRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var identityUserIdValue =
+            User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
+        if (!Guid.TryParse(
+                identityUserIdValue,
+                out var authenticatedIdentityUserId))
+        {
+            return Unauthorized(new
+            {
+                message =
+                    "The authenticated user does not contain a valid identity user id."
+            });
+        }
+
+        var hasActiveOrganization =
+            await _organizationAccessService.HasActiveOrganizationAsync(
+                authenticatedIdentityUserId,
+                cancellationToken);
+
+        if (!hasActiveOrganization)
+        {
+            return Forbid();
+        }
+
+        var canCreate =
+            await _moduleAuthorizationService.CanCreateAsync(
+                authenticatedIdentityUserId,
+                UsersModuleCode,
+                cancellationToken);
+
+        if (!canCreate)
+        {
+            return Forbid();
+        }
+
+        if (!TryGetAuthenticatedEmail(out var email))
+        {
+            return Unauthorized();
+        }
+
+        if (request.IdentityUserId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                message = "IdentityUserId is required."
+            });
+        }
+
+        var command =
+            new CreateUserCommand(
+                authenticatedIdentityUserId,
+                request.IdentityUserId,
+                email);
+
+        var result =
+            await _createUserHandler.HandleAsync(
+                command,
+                cancellationToken);
+
+        return StatusCode(
+            StatusCodes.Status201Created,
+            result);
+    }
+
 
     [HttpGet]
     [ProducesResponseType(
@@ -327,5 +414,16 @@ public sealed class UsersController : ControllerBase
                 cancellationToken);
 
         return Ok(result);
+    }
+
+    private bool TryGetAuthenticatedEmail(
+        out string email)
+    {
+        email =
+            User.FindFirstValue(ClaimTypes.Email)
+            ?? User.FindFirstValue("email")
+            ?? string.Empty;
+
+        return !string.IsNullOrWhiteSpace(email);
     }
 }
