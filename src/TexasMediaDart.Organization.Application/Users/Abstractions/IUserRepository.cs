@@ -16,6 +16,7 @@ public interface IUserRepository
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<Guid>> GetCandidateIdentityUserIdsAsync(
         Guid organizationId,
         Guid? identityUserId,
@@ -24,6 +25,12 @@ public interface IUserRepository
         CancellationToken cancellationToken = default);
 
     Task<OrganizationUserDto> CreateAsync(
+        Guid organizationId,
+        Guid identityUserId,
+        string createdBy,
+        CancellationToken cancellationToken = default);
+
+    Task<OrganizationUserDto> AcceptInvitationAsync(
         Guid organizationId,
         Guid identityUserId,
         string createdBy,

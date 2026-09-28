@@ -43,6 +43,7 @@ using TexasMediaDart.Organization.Application.UserGroups.Commands.RemoveUserGrou
 using TexasMediaDart.Organization.Application.UserGroups.Queries.SearchUserGroupMembers;
 
 using TexasMediaDart.Organization.Application.Users.Commands.CreateUser;
+using TexasMediaDart.Organization.Application.Users.Commands.AcceptInvitationUser;
 
 
 namespace TexasMediaDart.Organization.Api.Extensions;
@@ -125,6 +126,11 @@ public static class DependencyInjection
                 CreateUserCommand,
                 OrganizationUserDto>,
             CreateUserCommandHandler>();
+        services.AddScoped<
+            ICommandHandler<
+                AcceptInvitationUserCommand,
+                OrganizationUserDto>,
+            AcceptInvitationUserCommandHandler>();
 
         //------------------------------------------------------
         // User Queries
