@@ -1,6 +1,8 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Authentication;
+using TexasMediaDart.Organization.Api.Authentication;
 
 namespace TexasMediaDart.Organization.Api.Extensions;
 
@@ -23,9 +25,9 @@ public static class AuthenticationExtensions
                 "Jwt:Key is not configured.");
 
         services
-            .AddAuthentication(
-                JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
+        .AddAuthentication(
+            JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
             {
                 options.TokenValidationParameters =
                     new TokenValidationParameters
@@ -45,7 +47,13 @@ public static class AuthenticationExtensions
 
                         ClockSkew = TimeSpan.FromMinutes(1)
                     };
-            });
+            }).AddScheme<
+                AuthenticationSchemeOptions,
+                ServiceApiKeyAuthenticationHandler>(
+                    ServiceApiKeyDefaults.AuthenticationScheme,
+                    _ =>
+                    {
+                    });
 
         services.AddAuthorization();
 

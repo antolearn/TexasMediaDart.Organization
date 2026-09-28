@@ -19,18 +19,58 @@ public sealed class UserRepository : IUserRepository
             ?? throw new InvalidOperationException(
                 "Connection string 'DefaultConnection' is not configured.");
     }
-
     public async Task<OrganizationUserDto> CreateAsync(
-    Guid organizationId,
-    Guid identityUserId,
-    string createdBy,
+        Guid organizationId,
+        Guid identityUserId,
+        string createdBy,
+            CancellationToken cancellationToken = default)
+        {
+            await using var connection =
+                new SqlConnection(_connectionString);
+
+            var command = new CommandDefinition(
+                commandText: "[dbo].[sp_OrganizationUser_Create]",
+                parameters: new
+                {
+                    OrganizationId = organizationId,
+                    IdentityUserId = identityUserId,
+                    CreatedBy = createdBy
+                },
+                commandType: CommandType.StoredProcedure,
+                cancellationToken: cancellationToken);
+
+            try
+            {
+                return await connection.QuerySingleAsync<OrganizationUserDto>(
+                    command);
+            }
+            catch (SqlException ex) when (
+                ex.Number is 53001 or 53002 or 53003)
+            {
+                throw new ValidationException(ex.Message);
+            }
+            catch (SqlException ex) when (ex.Number == 53004)
+            {
+                throw new NotFoundException(
+                    "The organization does not exist or is inactive.");
+            }
+            catch (SqlException ex) when (ex.Number == 53005)
+            {
+                throw new ConflictException(
+                    "The identity user already belongs to an organization.");
+            }
+        }
+    public async Task<OrganizationUserDto> AcceptInvitationAsync(
+        Guid organizationId,
+        Guid identityUserId,
+        string createdBy,
         CancellationToken cancellationToken = default)
     {
         await using var connection =
             new SqlConnection(_connectionString);
 
         var command = new CommandDefinition(
-            commandText: "[dbo].[sp_OrganizationUser_Create]",
+            commandText: "[dbo].[sp_OrganizationUser_AcceptInvitation]",
             parameters: new
             {
                 OrganizationId = organizationId,
@@ -46,19 +86,19 @@ public sealed class UserRepository : IUserRepository
                 command);
         }
         catch (SqlException ex) when (
-            ex.Number is 53001 or 53002 or 53003)
+            ex.Number is 53101 or 53102 or 53103)
         {
             throw new ValidationException(ex.Message);
         }
-        catch (SqlException ex) when (ex.Number == 53004)
+        catch (SqlException ex) when (ex.Number == 53104)
         {
             throw new NotFoundException(
                 "The organization does not exist or is inactive.");
         }
-        catch (SqlException ex) when (ex.Number == 53005)
+        catch (SqlException ex) when (ex.Number == 53105)
         {
             throw new ConflictException(
-                "The identity user already belongs to an organization.");
+                "The identity user already belongs to another organization.");
         }
     }
     public async Task<OrganizationUserSearchResultDto> SearchAsync(
