@@ -133,6 +133,15 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Configure DEV CORS
+        shell: bash
+        run: |
+          az webapp config appsettings set \
+            --name "${{ env.AZURE_WEBAPP_NAME }}" \
+            --resource-group "TexasMediaDart-Dev" \
+            --settings \
+              "Cors__AllowedOrigins__0=${{ vars.FRONTEND_BASE_URL }}"
+
       - name: Deploy Organization API to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
