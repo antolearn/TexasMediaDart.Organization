@@ -133,14 +133,45 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Configure DEV CORS
+      - name: Validate DEV configuration
         shell: bash
+        env:
+          ORGANIZATION_SERVICE_API_KEY: ${{ secrets.ORGANIZATION_SERVICE_API_KEY }}
+        run: |
+          if [ -z "$ORGANIZATION_SERVICE_API_KEY" ]; then
+            echo "ERROR: GitHub secret ORGANIZATION_SERVICE_API_KEY is missing or empty."
+            exit 1
+          fi
+
+          echo "ORGANIZATION_SERVICE_API_KEY is available to the DEV deployment."
+
+      - name: Configure DEV application settings
+        shell: bash
+        env:
+          ORGANIZATION_SERVICE_API_KEY: ${{ secrets.ORGANIZATION_SERVICE_API_KEY }}
         run: |
           az webapp config appsettings set \
             --name "${{ env.AZURE_WEBAPP_NAME }}" \
             --resource-group "TexasMediaDart-Dev" \
             --settings \
-              "Cors__AllowedOrigins__0=${{ vars.FRONTEND_BASE_URL }}"
+              "Cors__AllowedOrigins__0=${{ vars.FRONTEND_BASE_URL }}" \
+              "ServiceAuthentication__ApiKey=$ORGANIZATION_SERVICE_API_KEY"
+
+      - name: Verify DEV service authentication setting
+        shell: bash
+        run: |
+          SETTING_EXISTS=$(az webapp config appsettings list \
+            --name "${{ env.AZURE_WEBAPP_NAME }}" \
+            --resource-group "TexasMediaDart-Dev" \
+            --query "[?name=='ServiceAuthentication__ApiKey'].name | [0]" \
+            --output tsv)
+
+          if [ "$SETTING_EXISTS" != "ServiceAuthentication__ApiKey" ]; then
+            echo "ERROR: ServiceAuthentication__ApiKey was not created in Azure App Service."
+            exit 1
+          fi
+
+          echo "ServiceAuthentication__ApiKey exists in Azure App Service."
 
       - name: Deploy Organization API to Azure App Service
         uses: azure/webapps-deploy@v3
